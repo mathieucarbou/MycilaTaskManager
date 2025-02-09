@@ -5,16 +5,19 @@
 #pragma once
 
 #include <Print.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include <esp_task_wdt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #ifdef MYCILA_JSON_SUPPORT
   #include <ArduinoJson.h>
 #endif
 
+#include "MycilaBinStatistics.h"
+
 #include <functional>
-#include <vector>
+#include <list>
+#include <memory>
 
 #define MYCILA_TASK_MANAGER_VERSION          "3.2.1"
 #define MYCILA_TASK_MANAGER_VERSION_MAJOR    3
@@ -22,111 +25,301 @@
 #define MYCILA_TASK_MANAGER_VERSION_REVISION 1
 
 namespace Mycila {
-  namespace TaskDuration {
-    constexpr int64_t MICROSECONDS = 1UL;
-    constexpr int64_t MILLISECONDS = 1000UL;
-    constexpr int64_t SECONDS = 1000000UL;
-    constexpr int64_t MINUTES = 60 * SECONDS;
-    constexpr int64_t HOURS = 60 * MINUTES;
-  } // namespace TaskDuration
-
-  enum class TaskTimeUnit {
-    MICROSECONDS = static_cast<uint32_t>(TaskDuration::MICROSECONDS),
-    MILLISECONDS = static_cast<uint32_t>(TaskDuration::MILLISECONDS),
-    SECONDS = static_cast<uint32_t>(TaskDuration::SECONDS),
-  };
-
-  enum class TaskType {
-    // once enabled, the task will run once and then disable itself
-    ONCE,
-    // the task will run at the specified interval as long as it is enabled
-    FOREVER
-  };
-
-  class Task;
-
-  typedef std::function<void(void* params)> TaskFunction;
-  typedef std::function<bool()> TaskPredicate;
-  typedef std::function<int64_t()> TaskIntervalSupplier;
-  typedef std::function<void(const Task& me, const uint32_t elapsed)> TaskDoneCallback;
-
-  ///////////////////
-  // TaskStatistics
-  ///////////////////
-
-  class TaskStatistics {
+  class Task {
     public:
-      // record the number of iterations in each bin.
-      // bin sizing is bases on power of 2, so if nBins = 16, we will have 16 bins:
-      // bin 0 : 0 <= elapsed < 2^1 (exception for lower bound)
-      // bin 1 : 2^1 <= elapsed < 2^2
-      // bin 2 : 2^2 <= elapsed < 2^3
-      // bin 3 : 2^3 <= elapsed < 2^4
-      // ...
-      // bin 14 : 2^14 <= elapsed < 2^15
-      // bin 15 : 2^15 <= elapsed (exception for upper bound)
-      // The unit determines the unit of the elapsed time recorded in the bins.
-      // It allows to be more precise depending on the expected task execution durations.
-      explicit TaskStatistics(const uint8_t nBins, TaskTimeUnit unit);
-      ~TaskStatistics();
+      enum class Type {
+        // once enabled, the task will run once and then pause itself
+        ONCE,
+        // the task will run at the specified interval as long as it is enabled
+        FOREVER
+      };
 
-      void record(uint32_t elapsed);
-      void clear();
+      typedef std::function<void(void* params)> Function;
+      typedef std::function<void(const Task& me, uint32_t elapsed)> DoneCallback;
+      typedef std::function<bool()> Predicate;
+
+      Task(const char* name, Function fn) : Task(name, Type::FOREVER, fn) {}
+
+      Task(const char* name, Type type, Function fn) : _name(name), _fn(fn) {
+        assert(_name);
+        assert(_fn);
+        setType(type);
+      }
+
+      ~Task();
+
+      const char* name() const { return _name; }
+
+      // change task type.
+      Task& setType(Type type) {
+        if (_type == type)
+          return *this;
+        _type = type;
+        // if the task is a ONCE task, it starts paused by default
+        _paused = _type == Type::ONCE;
+        return *this;
+      }
+      Type type() const { return _type; }
+
+      // change the enabled state
+      Task& setEnabled(bool enabled);
+      Task& setEnabledWhen(Predicate predicate) {
+        _enabled = predicate;
+        return *this;
+      }
+      // check if a task is enabled as per the enabled predicate. By default a task is enabled.
+      bool enabled() const { return !_enabled || _enabled(); }
+
+      // change the interval of execution
+      Task& setInterval(uint32_t intervalMillis) {
+        _intervalMs = intervalMillis;
+        return *this;
+      }
+      // task interval in milliseconds
+      uint32_t interval() const { return _intervalMs; }
+
+      // callback when the task is done
+      Task& onDone(DoneCallback doneCallback) {
+        _onDone = doneCallback;
+        return *this;
+      }
+
+      // pass some data to the task
+      Task& setData(void* params) {
+        _params = params;
+        return *this;
+      }
+      void* data() const { return _params; }
+
+      // pause a task
+      Task& pause() {
+        _paused = true;
+        return *this;
+      }
+      // check is the task is temporary paused
+      bool paused() const { return _paused; }
+      // resume a paused task
+      // if delayMillis is set, the task will resume after the delay
+      Task& resume(uint32_t delayMillis = 0) {
+        if (delayMillis) {
+          setInterval(delayMillis);
+          _lastEnd = millis();
+        }
+        _paused = false;
+        return *this;
+      }
+
+      // get remaining time before next run in milliseconds
+      uint32_t remainingTme() const {
+        if (!_intervalMs)
+          return 0;
+        uint32_t diff = millis() - _lastEnd;
+        return diff >= _intervalMs ? 0 : _intervalMs - diff;
+      }
+
+      // check if the task is scheduled to be run, meaning it is enabled, not paused and the interval will be reached
+      bool scheduled() const { return enabled() && !_paused; }
+
+      // check if the task should run, meaning it is enabled, not paused and the interval has been reached
+      bool shouldRun() const {
+        if (_paused || !enabled())
+          return false;
+        return _lastEnd == 0 || _intervalMs == 0 || millis() - _lastEnd >= _intervalMs;
+      }
+
+      // try to run the task if it should run
+      bool tryRun() {
+        if (_paused || !enabled())
+          return false;
+        if (_lastEnd == 0 || _intervalMs == 0) {
+          _run(millis());
+          return true;
+        }
+        uint32_t now = millis();
+        if (now - _lastEnd >= _intervalMs) {
+          _run(now);
+          return true;
+        }
+        return false;
+      }
+      // force the task to run
+      Task& forceRun() {
+        _run(millis());
+        return *this;
+      }
+      // check if the task is currently running
+      bool running() const { return _running; }
+
+      // request an early run of the task and do not wait for the interval to be reached
+      Task& requestEarlyRun() {
+        _lastEnd = 0;
+        return *this;
+      }
+      // check if the task is requested to run earlier than its scheduled interval
+      bool earlyRunRequested() const { return _lastEnd == 0; }
+
+      // enable profiling of the task
+      // binCount is the number of bins to record the number of iterations in each bin.
+      // unitDivider is the divider to se for the unit: 1 for milliseconds, 1000 for seconds, etc
+      void enableProfiling(uint8_t binCount = 10, uint32_t unitDividerMillis = 1) {
+        if (!_stats)
+          _stats = new BinStatistics(binCount, unitDividerMillis);
+      }
+      void disableProfiling() {
+        if (_stats) {
+          delete _stats;
+          _stats = nullptr;
+        }
+      }
+
+      bool profiled() const { return _stats; }
+      const BinStatistics* statistics() const { return _stats; }
+
+      Task& log();
 
 #ifdef MYCILA_JSON_SUPPORT
-      // json output
-      void toJson(const JsonObject& root) const;
+      void toJson(const JsonObject& root) const {
+        root["name"] = _name;
+        root["type"] = _type == Type::ONCE ? "ONCE" : "FOREVER";
+        root["paused"] = _paused;
+        root["enabled"] = enabled();
+        root["interval"] = _intervalMs;
+        if (_stats)
+          _stats->toJson(root["stats"].to<JsonObject>());
+      }
 #endif
 
-      uint8_t getBinCount() const;
-      TaskTimeUnit getUnit() const;
-      uint32_t getIterations() const;
-      uint16_t getBin(uint8_t index) const;
-
     private:
-      const uint8_t _nBins;
-      const TaskTimeUnit _unit;
-      uint16_t* _bins;
-      uint32_t _iterations = 0;
-  };
+      const char* _name;
+      const Function _fn;
 
-  ///////////////////
-  // TaskManager
-  ///////////////////
+      Predicate _enabled = nullptr;
+      bool _paused = false;
+      bool _running = false;
+      DoneCallback _onDone = nullptr;
+      Mycila::BinStatistics* _stats = nullptr;
+      Type _type = Type::FOREVER;
+      uint32_t _intervalMs = 0;
+      uint32_t _lastEnd = 0;
+      void* _params = nullptr;
+
+      void _run(uint32_t now) {
+        _running = true;
+        _fn(_params);
+        _running = false;
+        _lastEnd = millis();
+        if (_type == Type::ONCE)
+          _paused = true;
+        uint32_t elapsed = _lastEnd - now;
+        if (_stats)
+          _stats->record(elapsed);
+        if (_onDone)
+          _onDone(*this, elapsed);
+      }
+  };
 
   class TaskManager {
     public:
-      explicit TaskManager(const char* name, const size_t taskCount = 0);
-      ~TaskManager();
+      explicit TaskManager(const char* name) : _name(name) {}
 
-      const char* getName() const;
+      ~TaskManager() { _tasks.clear(); }
+
+      const char* name() const { return _name; }
+
+      Task& newTask(const char* name, Task::Function fn) {
+        return newTask(name, Task::Type::FOREVER, fn);
+      }
+
+      Task& newTask(const char* name, Task::Type type, Task::Function fn) {
+        auto task = std::make_shared<Task>(name, type, fn);
+        _tasks.push_back(task);
+        return *task;
+      }
+
+      void addTask(Task& task) { // NOLINT
+        _tasks.push_back(std::shared_ptr<Task>(&task, doNotDelete));
+      }
+
+      void removeTask(Task& task) { // NOLINT
+        _tasks.remove_if([&task](const std::shared_ptr<Task>& t) { return t.get() == &task; });
+      }
 
       // number of tasks
-      size_t getSize() const;
+      size_t tasks() const { return _tasks.size(); }
+      bool empty() const { return _tasks.empty(); }
 
       // Must be called from main loop and will loop over all registered tasks.
       // When using async mode, do not call loop: the async task will call it.
       // Returns the number of executed tasks
-      size_t loop();
+      size_t loop() {
+        size_t executed = 0;
+        uint32_t now = millis();
+        for (auto& task : _tasks) {
+          if (task->tryRun()) {
+            executed++;
+            yield();
+          }
+        }
+        if (_stats && executed) {
+          _stats->record(millis() - now);
+        }
+        return executed;
+      }
 
       // call pause() on all tasks
-      void pause();
+      void pause() {
+        for (auto& task : _tasks)
+          task->pause();
+      }
 
       // call resume() on all tasks
-      void resume();
+      void resume(uint32_t delayMillis = 0) {
+        for (auto& task : _tasks)
+          task->resume(delayMillis);
+      }
 
-      // for all tasks
-      void enableProfiling(const uint8_t nBins = 10, TaskTimeUnit unit = TaskTimeUnit::MILLISECONDS);
+      void setEnabled(bool enabled) {
+        for (auto& task : _tasks)
+          task->setEnabled(enabled);
+      }
 
-      // for all tasks
-      void disableProfiling();
+      // enable profiling for all tasks, plus the task manager itself
+      // unitDivider is the divider to se for the unit: 1 for milliseconds, 1000 for seconds, etc
+      void enableProfiling(uint8_t taskManagerBinCount, uint8_t taskBinCount, uint32_t unitDividerMillis = 1) {
+        if (!_stats)
+          _stats = new BinStatistics(taskManagerBinCount, unitDividerMillis);
+        for (auto& task : _tasks)
+          task->enableProfiling(taskBinCount, unitDividerMillis);
+      }
+
+      // enable profiling for the task manager only
+      void enableProfiling(uint8_t taskManagerBinCount = 12, uint32_t unitDividerMillis = 1) {
+        if (!_stats)
+          _stats = new BinStatistics(taskManagerBinCount, unitDividerMillis);
+      }
+
+      // disable profiling for all tasks, plus the task manager itself
+      void disableProfiling() {
+        if (_stats) {
+          delete _stats;
+          _stats = nullptr;
+        }
+        for (auto& task : _tasks)
+          task->disableProfiling();
+      }
 
       // log all tasks
       void log();
 
       // json output of the task manager
 #ifdef MYCILA_JSON_SUPPORT
-      void toJson(const JsonObject& root) const;
+      void toJson(const JsonObject& root) const {
+        root["name"] = _name;
+        if (_stats)
+          _stats->toJson(root["stats"].to<JsonObject>());
+        for (auto& task : _tasks)
+          task->toJson(root["tasks"].add<JsonObject>());
+      }
 #endif
 
       // Start the task manager in a separate task.
@@ -150,142 +343,32 @@ namespace Mycila {
 
     private:
       const char* _name;
-      std::vector<Task*> _tasks;
-      void _addTask(Task* task);
-      void _removeTask(Task* task);
-      // WDT
+      std::list<std::shared_ptr<Task>> _tasks;
+      Mycila::BinStatistics* _stats = nullptr;
       bool _wdt = false;
+
+      static void doNotDelete(Mycila::Task* t) {}
+
       // async
       TaskHandle_t _taskManagerHandle = NULL;
       uint32_t _delay = 0;
-      static void _asyncTaskManager(void* params);
+      static void _asyncTaskManager(void* params) {
+        TaskManager* taskManager = reinterpret_cast<TaskManager*>(params);
+        while (true) {
+          if (taskManager->_wdt)
+            esp_task_wdt_reset();
+          if (!taskManager->loop()) {
+            if (taskManager->_delay)
+              delay(taskManager->_delay);
+            else
+              yield();
+          }
+        }
+        vTaskDelete(NULL);
+      }
 
     private:
       friend class Task;
   };
 
-  ///////////////////
-  // Task
-  ///////////////////
-
-  class Task {
-    public:
-      Task(const char* name, TaskFunction fn);
-      Task(const char* name, TaskType type, TaskFunction fn);
-      ~Task();
-
-      ///////////////////
-      // task information
-      ///////////////////
-
-      const char* getName() const;
-      TaskType getType() const;
-      int64_t getInterval() const;
-      // get remaining time before next run
-      int64_t getRemainingTme() const;
-      // check if a task is enabled as per the enabled predicate. By default a task is enabled.
-      bool isEnabled() const;
-      // check is the task is temporary paused
-      bool isPaused() const;
-      bool isRunning() const;
-      bool isEarlyRunRequested() const;
-      // check if the task should run, meaning it is enabled, not paused and the interval has been reached
-      bool shouldRun() const;
-      bool isManaged() const;
-      bool isProfiled() const;
-
-      ///////////////////
-      // task creation
-      ///////////////////
-
-      // change task type.
-      // ONCE will start paused, run once, and be paused again.
-      // FOREVER will start active and will run at the specified interval.
-      // In both cases the enable predicate will be checked to see of the task is enabled when not paused.
-      void setType(TaskType type);
-
-      // change the enabled state
-      void setEnabled(bool enabled);
-
-      // enable the task if the predicate returns true
-      void setEnabledWhen(TaskPredicate predicate);
-
-      // change the interval of execution
-      void setInterval(int64_t intervalMicros);
-
-      // dynamically provide the interval
-      void setIntervalSupplier(TaskIntervalSupplier supplier);
-
-      // callback when the task is done
-      void setCallback(TaskDoneCallback doneCallback);
-
-      // have this task managed by a task manager
-      void setManager(TaskManager& manager); // NOLINT
-
-      ///////////////////
-      // task management
-      ///////////////////
-
-      // pass some data to the task
-      void setData(void* params);
-      void* getData() const;
-
-      // pause a task
-      void pause();
-
-      // resume a paused task
-      void resume(int64_t delayMicros = 0);
-
-      // try to run the task if it should run
-      bool tryRun();
-
-      // force the task to run
-      void forceRun();
-
-      // request an early run of the task and do not wait for the interval to be reached
-      void requestEarlyRun();
-
-      ///////////////////
-      // stats
-      ///////////////////
-
-      bool enableProfiling(const uint8_t nBins = 10, TaskTimeUnit unit = TaskTimeUnit::MILLISECONDS);
-      bool disableProfiling();
-      void log();
-      const TaskStatistics& getStatistics() const;
-
-      ///////////////////
-      // optional
-      ///////////////////
-
-#ifdef MYCILA_JSON_SUPPORT
-      // json output
-      void toJson(const JsonObject& root) const;
-#endif
-
-    public:
-      static const Mycila::TaskPredicate ALWAYS_TRUE;
-      static const Mycila::TaskPredicate ALWAYS_FALSE;
-
-      ///////////////////
-      // private
-      ///////////////////
-
-    private:
-      const char* _name;
-      const TaskFunction _fn;
-
-      TaskType _type = TaskType::FOREVER;
-      TaskManager* _manager = nullptr;
-      TaskStatistics* _stats = nullptr;
-      TaskPredicate _enabledPredicate = nullptr;
-      TaskIntervalSupplier _intervalSupplier = nullptr;
-      TaskDoneCallback _onDone = nullptr;
-      bool _running = false;
-      bool _paused = false;
-      int64_t _lastEnd = 0;
-      void* _params = nullptr;
-
-      void _run(const int64_t& now);
-  };
 } // namespace Mycila

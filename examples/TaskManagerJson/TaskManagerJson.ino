@@ -2,11 +2,11 @@
 #include <ArduinoJson.h>
 #include <MycilaTaskManager.h>
 
-Mycila::TaskManager loopTaskManager("loop()", 4);
+Mycila::TaskManager loopTaskManager("loop()");
 
-Mycila::Task sayHello("sayHello", [](void* params) { Serial.println("Hello"); });
-Mycila::Task sayGoodbye("sayGoodbye", [](void* params) { Serial.println("Hello"); });
-Mycila::Task ping("ping", [](void* params) { Serial.println((const char*)params); });
+Mycila::Task sayHello("sayHello", [](void* params) { Serial.println("Hello"); delay(random(1, 500)); });
+Mycila::Task sayGoodbye("sayGoodbye", [](void* params) { Serial.println("Hello"); delay(random(1, 500)); });
+Mycila::Task ping("ping", [](void* params) { Serial.println((const char*)params); delay(random(1, 500)); });
 Mycila::Task output("output", [](void* params) {
   JsonDocument doc;
   loopTaskManager.toJson(doc.to<JsonObject>());
@@ -22,33 +22,37 @@ void setup() {
   while (!Serial)
     continue;
 
-  sayHello.setType(Mycila::TaskType::FOREVER);
-  sayHello.setManager(loopTaskManager);
-  sayHello.setInterval(1 * Mycila::TaskDuration::SECONDS);
-  sayHello.setCallback([](const Mycila::Task& me, const uint32_t elapsed) {
-    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.getName(), elapsed);
+  sayHello.setType(Mycila::Task::Type::FOREVER);
+  sayHello.setInterval(1000);
+  sayHello.onDone([](const Mycila::Task& me, uint32_t elapsed) {
+    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.name(), elapsed);
   });
+  sayHello.setEnabled(true);
+  loopTaskManager.addTask(sayHello);
 
-  sayGoodbye.setType(Mycila::TaskType::FOREVER);
-  sayGoodbye.setManager(loopTaskManager);
-  sayGoodbye.setInterval(3 * Mycila::TaskDuration::SECONDS);
-  sayGoodbye.setCallback([](const Mycila::Task& me, const uint32_t elapsed) {
-    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.getName(), elapsed);
+  sayGoodbye.setType(Mycila::Task::Type::FOREVER);
+  sayGoodbye.setInterval(3000);
+  sayGoodbye.onDone([](const Mycila::Task& me, uint32_t elapsed) {
+    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.name(), elapsed);
     ping.setData(params);
     ping.resume();
   });
+  sayGoodbye.setEnabled(true);
+  loopTaskManager.addTask(sayGoodbye);
 
-  ping.setType(Mycila::TaskType::ONCE);
-  ping.setManager(loopTaskManager);
-  ping.setCallback([](const Mycila::Task& me, const uint32_t elapsed) {
-    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.getName(), elapsed);
+  ping.setType(Mycila::Task::Type::ONCE);
+  ping.onDone([](const Mycila::Task& me, uint32_t elapsed) {
+    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.name(), elapsed);
   });
+  ping.setEnabled(true);
+  loopTaskManager.addTask(ping);
 
-  output.setType(Mycila::TaskType::FOREVER);
-  output.setManager(loopTaskManager);
-  output.setInterval(5 * Mycila::TaskDuration::SECONDS);
+  output.setType(Mycila::Task::Type::FOREVER);
+  output.setInterval(5000);
+  output.setEnabled(true);
+  loopTaskManager.addTask(output);
 
-  loopTaskManager.enableProfiling(6, Mycila::TaskTimeUnit::MICROSECONDS);
+  loopTaskManager.enableProfiling(6);
 }
 
 void loop() {

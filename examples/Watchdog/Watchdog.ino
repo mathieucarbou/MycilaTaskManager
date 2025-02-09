@@ -21,11 +21,11 @@ void setup() {
   while (!Serial)
     continue;
 
-  slowdown1.setType(Mycila::TaskType::FOREVER);
-  slowdown1.setManager(taskManager1);
+  slowdown1.setType(Mycila::Task::Type::FOREVER);
+  taskManager1.addTask(slowdown1);
 
-  slowdown2.setType(Mycila::TaskType::FOREVER);
-  slowdown2.setManager(taskManager2);
+  slowdown2.setType(Mycila::Task::Type::FOREVER);
+  taskManager2.addTask(slowdown2);
 
   Mycila::TaskManager::configureWDT(5, false);
 

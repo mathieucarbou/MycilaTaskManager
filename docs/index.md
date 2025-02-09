@@ -28,10 +28,11 @@ Tasks are represented by anonymous function, so they must be small, non-blocking
 Mycila::Task sayHello("sayHello", [](void* params) { Serial.println("Hello"); });
 
 void setup() {
-  sayHello.setType(Mycila::TaskType::FOREVER); // this is the default
-  sayHello.setInterval(1 * Mycila::TaskDuration::SECONDS);
-  sayHello.setCallback([](const Mycila::Task& me, const uint32_t elapsed) {
-    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.getName(), elapsed);
+  sayHello.setEnabled(true);
+  sayHello.setType(Mycila::Task::Type::FOREVER); // this is the default
+  sayHello.setInterval(1000);
+  sayHello.onDone([](const Mycila::Task& me, uint32_t elapsed) {
+    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.name(), elapsed);
   });
 }
 
@@ -49,13 +50,15 @@ Mycila::Task sayHello("sayHello", [](void* params) { Serial.println("Hello"); })
 Mycila::Task sayGoodbye("sayGoodbye", [](void* params) { Serial.println("Hello"); });
 
 void setup() {
-  sayHello.setType(Mycila::TaskType::FOREVER); // this is the default
-  sayHello.setManager(loopTaskManager);
-  sayHello.setInterval(1 * Mycila::TaskDuration::SECONDS);
-  sayHello.setCallback([](const Mycila::Task& me, const uint32_t elapsed) { sayGoodbye.resume(); });
+  sayHello.setEnabled(true);
+  sayHello.setType(Mycila::Task::Type::FOREVER); // this is the default
+  sayHello.setInterval(1000);
+  sayHello.onDone([](const Mycila::Task& me, uint32_t elapsed) { sayGoodbye.resume(); });
+  loopTaskManager.addTask(sayHello);
 
-  sayGoodbye.setType(Mycila::TaskType::ONCE);
-  sayGoodbye.setManager(loopTaskManager);
+  sayGoodbye.setEnabled(true);
+  sayGoodbye.setType(Mycila::Task::Type::ONCE);
+  loopTaskManager.addTask(sayGoodbye);
 }
 
 void loop() {
