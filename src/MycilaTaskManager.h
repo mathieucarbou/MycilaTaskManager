@@ -222,7 +222,11 @@ namespace Mycila {
     public:
       explicit TaskManager(const char* name) : _name(name) {}
 
-      ~TaskManager() { _tasks.clear(); }
+      ~TaskManager() {
+        _tasks.clear();
+        if (_stats)
+          delete _stats;
+      }
 
       const char* name() const { return _name; }
 
