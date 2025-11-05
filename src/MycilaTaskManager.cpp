@@ -100,7 +100,7 @@ Mycila::Task::~Task() {
 }
 
 Mycila::Task& Mycila::Task::setEnabled(bool enabled) {
-  if (_enabled) {
+  if (enabled) {
     _enabled = nullptr;
   } else {
     _enabled = PREDICATE_FALSE;
