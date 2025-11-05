@@ -27,7 +27,7 @@ void Mycila::TaskManager::log() {
         line += std::to_string(i < binCount - 1 ? (i + 1) : i);
       }
       line += " |";
-      LOGI(TAG, "| %30s%s count=%" PRIu32, _name, line.c_str(), count);
+      ESP_LOGI(TAG, "| %30s%s count=%" PRIu32, _name, line.c_str(), count);
     }
   }
   for (auto& task : _tasks)
@@ -47,10 +47,10 @@ bool Mycila::TaskManager::asyncStart(uint32_t stackSize, BaseType_t priority, Ba
   bool b = xTaskCreateUniversal(_asyncTaskManager, _name, stackSize, this, prio, &_taskManagerHandle, coreID) == pdPASS;
 
   if (b) {
-    LOGD(TAG, "Task manager '%s' started async: core: %d, priority: %" PRIu32 ", stack: %" PRIu32 ", handle: %p", _name, coreID, prio, stackSize, _taskManagerHandle);
+    ESP_LOGD(TAG, "Task manager '%s' started async: core: %d, priority: %" PRIu32 ", stack: %" PRIu32 ", handle: %p", _name, coreID, prio, stackSize, _taskManagerHandle);
 
     if (wdt && esp_task_wdt_add(_taskManagerHandle) == ESP_OK) {
-      LOGD(TAG, "Task manager '%s' added to WDT", _name);
+      ESP_LOGD(TAG, "Task manager '%s' added to WDT", _name);
     }
     _wdt = wdt;
   }
@@ -60,14 +60,14 @@ bool Mycila::TaskManager::asyncStart(uint32_t stackSize, BaseType_t priority, Ba
 void Mycila::TaskManager::asyncStop() {
   if (!_taskManagerHandle)
     return;
-  LOGD(TAG, "Stopping async task manager with handle: %p", _taskManagerHandle);
+  ESP_LOGD(TAG, "Stopping async task manager with handle: %p", _taskManagerHandle);
   esp_task_wdt_delete(_taskManagerHandle);
   vTaskDelete(_taskManagerHandle);
   _taskManagerHandle = NULL;
 }
 
 bool Mycila::TaskManager::configureWDT(uint32_t timeoutSeconds, bool panic) {
-  LOGI(TAG, "Configuring Task Watchdog Timer (TWDT) to %" PRIu32 " seconds", timeoutSeconds);
+  ESP_LOGI(TAG, "Configuring Task Watchdog Timer (TWDT) to %" PRIu32 " seconds", timeoutSeconds);
 #if ESP_IDF_VERSION_MAJOR < 5
   return esp_task_wdt_init(timeoutSeconds, panic) == ESP_OK;
 #else
@@ -113,6 +113,6 @@ Mycila::Task& Mycila::Task::log() {
     line += std::to_string(i < binCount - 1 ? (i + 1) : i);
   }
   line += " |";
-  LOGI(TAG, "| %30s%s count=%" PRIu32, _name, line.c_str(), count);
+  ESP_LOGI(TAG, "| %30s%s count=%" PRIu32, _name, line.c_str(), count);
   return *this;
 }
