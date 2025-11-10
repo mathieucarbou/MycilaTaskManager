@@ -55,7 +55,7 @@ Tasks are represented by anonymous functions, so they must be small, non-blockin
 
 ```ini
 lib_deps =
-    mathieucarbou/MycilaTaskManager@^4.0.4
+    mathieucarbou/MycilaTaskManager@^4.1.0
 ```
 
 ### Arduino IDE
@@ -452,4 +452,4 @@ Mathieu Carbou
 
 ## Version
 
-Current version: **4.0.4**
+Current version: **4.1.0**
