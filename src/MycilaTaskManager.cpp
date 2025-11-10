@@ -11,7 +11,7 @@
 
 #define TAG "TASKS"
 
-static bool PREDICATE_FALSE() { return false; };
+static constexpr bool PREDICATE_FALSE() { return false; };
 
 void Mycila::TaskManager::log() {
   if (_stats) {
