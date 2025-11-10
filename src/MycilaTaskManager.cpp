@@ -14,6 +14,7 @@
 static constexpr bool PREDICATE_FALSE() { return false; };
 
 void Mycila::TaskManager::log() {
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
   if (_stats) {
     const uint8_t binCount = _stats->bins();
     const uint32_t count = _stats->count();
@@ -32,6 +33,7 @@ void Mycila::TaskManager::log() {
   }
   for (auto& task : _tasks)
     task->log();
+#endif
 }
 
 bool Mycila::TaskManager::asyncStart(uint32_t stackSize, BaseType_t priority, BaseType_t coreID, uint32_t delay, bool wdt) {
@@ -81,8 +83,10 @@ bool Mycila::TaskManager::configureWDT(uint32_t timeoutSeconds, bool panic) {
 }
 
 Mycila::Task::~Task() {
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
   if (_stats)
     delete _stats;
+#endif
 }
 
 Mycila::Task& Mycila::Task::setEnabled(bool enabled) {
@@ -95,6 +99,7 @@ Mycila::Task& Mycila::Task::setEnabled(bool enabled) {
 }
 
 Mycila::Task& Mycila::Task::log() {
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
   if (!_stats)
     return *this;
 
@@ -114,5 +119,6 @@ Mycila::Task& Mycila::Task::log() {
   }
   line += " |";
   ESP_LOGI(TAG, "| %30s%s count=%" PRIu32, _name, line.c_str(), count);
+#endif
   return *this;
 }

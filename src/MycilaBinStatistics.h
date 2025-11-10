@@ -4,11 +4,13 @@
  */
 #pragma once
 
-#include <stdint.h>
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
 
-#ifdef MYCILA_JSON_SUPPORT
-  #include <ArduinoJson.h>
-#endif
+  #include <stdint.h>
+
+  #ifdef MYCILA_JSON_SUPPORT
+    #include <ArduinoJson.h>
+  #endif
 
 namespace Mycila {
   class BinStatistics {
@@ -62,14 +64,14 @@ namespace Mycila {
         }
       }
 
-#ifdef MYCILA_JSON_SUPPORT
+  #ifdef MYCILA_JSON_SUPPORT
       void toJson(const JsonObject& root) const {
         root["count"] = _count;
         root["unit_divider"] = _unitDivider;
         for (size_t i = 0; i < _binCount; i++)
           root["bins"][i] = _bins[i];
       }
-#endif
+  #endif
 
     private:
       uint8_t _binCount;
@@ -78,3 +80,5 @@ namespace Mycila {
       uint32_t _count = 0;
   };
 } // namespace Mycila
+
+#endif // MYCILA_TASK_MANAGER_NO_STATS

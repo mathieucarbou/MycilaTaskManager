@@ -170,18 +170,30 @@ namespace Mycila {
       // binCount is the number of bins to record the number of iterations in each bin.
       // unitDivider is the divider to se for the unit: 1 for milliseconds, 1000 for seconds, etc
       void enableProfiling(uint8_t binCount = 10, uint32_t unitDividerMillis = 1) {
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (!_stats)
           _stats = new BinStatistics(binCount, unitDividerMillis);
+#endif
       }
       void disableProfiling() {
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (_stats) {
           delete _stats;
           _stats = nullptr;
         }
+#endif
       }
 
-      bool profiled() const { return _stats; }
+      bool profiled() const {
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
+        return _stats;
+#else
+        return false;
+#endif
+      }
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
       const BinStatistics* statistics() const { return _stats; }
+#endif
 
       Task& log();
 
@@ -192,8 +204,10 @@ namespace Mycila {
         root["paused"] = _paused;
         root["enabled"] = enabled();
         root["interval"] = _intervalMs;
+  #ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (_stats && _stats->bins() && _stats->count())
           _stats->toJson(root["stats"].to<JsonObject>());
+  #endif
       }
 #endif
 
@@ -204,10 +218,12 @@ namespace Mycila {
       Predicate _enabled = nullptr;
       bool _paused = false;
       bool _running = false;
-      Mycila::BinStatistics* _stats = nullptr;
       Type _type = Type::FOREVER;
       uint32_t _intervalMs = 0;
       uint32_t _lastEnd = 0;
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
+      Mycila::BinStatistics* _stats = nullptr;
+#endif
 #ifndef MYCILA_TASK_MANAGER_NO_CALLBACKS
       DoneCallback _onDone = nullptr;
 #endif
@@ -226,9 +242,13 @@ namespace Mycila {
         _lastEnd = millis();
         if (_type == Type::ONCE)
           _paused = true;
+#if !defined(MYCILA_TASK_MANAGER_NO_STATS) || !defined(MYCILA_TASK_MANAGER_NO_CALLBACKS)
         uint32_t elapsed = _lastEnd - now;
+#endif
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (_stats)
           _stats->record(elapsed);
+#endif
 #ifndef MYCILA_TASK_MANAGER_NO_CALLBACKS
         if (_onDone)
           _onDone(*this, elapsed);
@@ -242,8 +262,10 @@ namespace Mycila {
 
       ~TaskManager() {
         _tasks.clear();
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (_stats)
           delete _stats;
+#endif
       }
 
       const char* name() const { return _name; }
@@ -275,16 +297,20 @@ namespace Mycila {
       // Returns the number of executed tasks
       size_t loop() {
         size_t executed = 0;
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
         uint32_t now = millis();
+#endif
         for (auto& task : _tasks) {
           if (task->tryRun()) {
             executed++;
             yield();
           }
         }
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (_stats && executed) {
           _stats->record(millis() - now);
         }
+#endif
         return executed;
       }
 
@@ -308,26 +334,32 @@ namespace Mycila {
       // enable profiling for all tasks, plus the task manager itself
       // unitDivider is the divider to se for the unit: 1 for milliseconds, 1000 for seconds, etc
       void enableProfiling(uint8_t taskManagerBinCount, uint8_t taskBinCount, uint32_t unitDividerMillis = 1) {
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (!_stats)
           _stats = new BinStatistics(taskManagerBinCount, unitDividerMillis);
         for (auto& task : _tasks)
           task->enableProfiling(taskBinCount, unitDividerMillis);
+#endif
       }
 
       // enable profiling for the task manager only
       void enableProfiling(uint8_t taskManagerBinCount = 12, uint32_t unitDividerMillis = 1) {
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (!_stats)
           _stats = new BinStatistics(taskManagerBinCount, unitDividerMillis);
+#endif
       }
 
       // disable profiling for all tasks, plus the task manager itself
       void disableProfiling() {
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (_stats) {
           delete _stats;
           _stats = nullptr;
         }
         for (auto& task : _tasks)
           task->disableProfiling();
+#endif
       }
 
       // log all tasks
@@ -337,8 +369,10 @@ namespace Mycila {
 #ifdef MYCILA_JSON_SUPPORT
       void toJson(const JsonObject& root) const {
         root["name"] = _name;
+  #ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (_stats && _stats->bins() && _stats->count())
           _stats->toJson(root["stats"].to<JsonObject>());
+  #endif
         for (auto& task : _tasks)
           task->toJson(root["tasks"].add<JsonObject>());
       }
@@ -366,8 +400,11 @@ namespace Mycila {
     private:
       const char* _name;
       std::list<std::shared_ptr<Task>> _tasks;
-      Mycila::BinStatistics* _stats = nullptr;
       bool _wdt = false;
+
+#ifndef MYCILA_TASK_MANAGER_NO_STATS
+      Mycila::BinStatistics* _stats = nullptr;
+#endif
 
       static void doNotDelete(Mycila::Task* t) {}
 
