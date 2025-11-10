@@ -34,7 +34,11 @@ namespace Mycila {
         FOREVER
       };
 
+#ifndef MYCILA_TASK_MANAGER_NO_PARAMS
       typedef std::function<void(void* params)> Function;
+#else
+      typedef std::function<void()> Function;
+#endif
       typedef std::function<void(const Task& me, uint32_t elapsed)> DoneCallback;
       typedef std::function<bool()> Predicate;
 
@@ -78,18 +82,22 @@ namespace Mycila {
       // task interval in milliseconds
       uint32_t interval() const { return _intervalMs; }
 
+#ifndef MYCILA_TASK_MANAGER_NO_CALLBACKS
       // callback when the task is done
       Task& onDone(DoneCallback doneCallback) {
         _onDone = doneCallback;
         return *this;
       }
+#endif
 
+#ifndef MYCILA_TASK_MANAGER_NO_PARAMS
       // pass some data to the task
       Task& setData(void* params) {
         _params = params;
         return *this;
       }
       void* data() const { return _params; }
+#endif
 
       // pause a task
       Task& pause() {
@@ -196,16 +204,24 @@ namespace Mycila {
       Predicate _enabled = nullptr;
       bool _paused = false;
       bool _running = false;
-      DoneCallback _onDone = nullptr;
       Mycila::BinStatistics* _stats = nullptr;
       Type _type = Type::FOREVER;
       uint32_t _intervalMs = 0;
       uint32_t _lastEnd = 0;
+#ifndef MYCILA_TASK_MANAGER_NO_CALLBACKS
+      DoneCallback _onDone = nullptr;
+#endif
+#ifndef MYCILA_TASK_MANAGER_NO_PARAMS
       void* _params = nullptr;
+#endif
 
       void _run(uint32_t now) {
         _running = true;
+#ifndef MYCILA_TASK_MANAGER_NO_PARAMS
         _fn(_params);
+#else
+        _fn();
+#endif
         _running = false;
         _lastEnd = millis();
         if (_type == Type::ONCE)
@@ -213,8 +229,10 @@ namespace Mycila {
         uint32_t elapsed = _lastEnd - now;
         if (_stats)
           _stats->record(elapsed);
+#ifndef MYCILA_TASK_MANAGER_NO_CALLBACKS
         if (_onDone)
           _onDone(*this, elapsed);
+#endif
       }
   };
 
