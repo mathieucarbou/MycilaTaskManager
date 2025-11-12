@@ -18,6 +18,7 @@
 #include <functional>
 #include <list>
 #include <memory>
+#include <utility>
 
 #define MYCILA_TASK_MANAGER_VERSION          "4.2.0"
 #define MYCILA_TASK_MANAGER_VERSION_MAJOR    4
@@ -42,9 +43,9 @@ namespace Mycila {
       typedef std::function<void(const Task& me, uint32_t elapsed)> DoneCallback;
       typedef std::function<bool()> Predicate;
 
-      Task(const char* name, Function fn) : Task(name, Type::FOREVER, fn) {}
+      Task(const char* name, Function fn) : Task(name, Type::FOREVER, std::move(fn)) {}
 
-      Task(const char* name, Type type, Function fn) : _name(name), _fn(fn) {
+      Task(const char* name, Type type, Function fn) : _name(name), _fn(std::move(fn)) {
         assert(_name);
         assert(_fn);
         setType(type);
@@ -68,7 +69,7 @@ namespace Mycila {
       // change the enabled state
       Task& setEnabled(bool enabled);
       Task& setEnabledWhen(Predicate predicate) {
-        _enabled = predicate;
+        _enabled = std::move(predicate);
         return *this;
       }
       // check if a task is enabled as per the enabled predicate. By default a task is enabled.
@@ -85,7 +86,7 @@ namespace Mycila {
 #ifndef MYCILA_TASK_MANAGER_NO_CALLBACKS
       // callback when the task is done
       Task& onDone(DoneCallback doneCallback) {
-        _onDone = doneCallback;
+        _onDone = std::move(doneCallback);
         return *this;
       }
 #endif
