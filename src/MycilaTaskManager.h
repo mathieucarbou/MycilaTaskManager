@@ -296,7 +296,8 @@ namespace Mycila {
       // Must be called from main loop and will loop over all registered tasks.
       // When using async mode, do not call loop: the async task will call it.
       // Returns the number of executed tasks
-      size_t loop() {
+      // @param delayMillis: if > 0, will delay this amount of milliseconds at the end of the loop
+      size_t loop(uint32_t delayMillis = 10) {
         size_t executed = 0;
 #ifndef MYCILA_TASK_MANAGER_NO_STATS
         uint32_t now = millis();
@@ -312,6 +313,8 @@ namespace Mycila {
           _stats->record(millis() - now);
         }
 #endif
+        if (delayMillis)
+          delay(delayMillis);
         return executed;
       }
 
@@ -432,14 +435,9 @@ namespace Mycila {
         TaskManager* taskManager = reinterpret_cast<TaskManager*>(params);
         taskManager->_allowedToRun = true;
         while (taskManager->_allowedToRun) {
+          taskManager->loop(taskManager->_delay);
           if (taskManager->_wdt)
             esp_task_wdt_reset();
-          if (!taskManager->loop()) {
-            if (taskManager->_delay)
-              delay(taskManager->_delay);
-            else
-              yield();
-          }
         }
         vTaskDelete(NULL);
       }
