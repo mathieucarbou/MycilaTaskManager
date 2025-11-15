@@ -64,7 +64,7 @@ void Mycila::TaskManager::asyncStop() {
     return;
   ESP_LOGD(TAG, "Stopping async task manager with handle: %p", _taskManagerHandle);
   esp_task_wdt_delete(_taskManagerHandle);
-  vTaskDelete(_taskManagerHandle);
+  _allowedToRun = false;
   _taskManagerHandle = NULL;
 }
 

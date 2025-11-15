@@ -315,6 +315,21 @@ namespace Mycila {
         return executed;
       }
 
+      void waitForAllTasksToComplete(uint32_t _intervalMs = 10) const {
+        bool allDone;
+        do {
+          allDone = true;
+          for (const auto& task : _tasks) {
+            if (task->running()) {
+              allDone = false;
+              break;
+            }
+          }
+          if (!allDone)
+            delay(_intervalMs);
+        } while (!allDone);
+      }
+
       // call pause() on all tasks
       void pause() {
         for (auto& task : _tasks)
@@ -412,9 +427,11 @@ namespace Mycila {
       // async
       TaskHandle_t _taskManagerHandle = NULL;
       uint32_t _delay = 0;
+      bool _allowedToRun = false;
       static void _asyncTaskManager(void* params) {
         TaskManager* taskManager = reinterpret_cast<TaskManager*>(params);
-        while (true) {
+        taskManager->_allowedToRun = true;
+        while (taskManager->_allowedToRun) {
           if (taskManager->_wdt)
             esp_task_wdt_reset();
           if (!taskManager->loop()) {
