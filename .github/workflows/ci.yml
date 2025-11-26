@@ -65,31 +65,19 @@ jobs:
       pio_default_envs: ${{ steps.envs.outputs.pio_default_envs }}
 
   platformio:
-    name: "pio:${{ matrix.env }}:${{ matrix.board }}"
+    name: "pio:${{ matrix.board }}"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - env: ci-arduino-2
-            board: esp32dev
-          - env: ci-arduino-2
-            board: esp32-s2-saola-1
-          - env: ci-arduino-2
-            board: esp32-s3-devkitc-1
-          - env: ci-arduino-2
-            board: esp32-c3-devkitc-02
-
-          - env: ci-arduino-3
-            board: esp32dev
-          - env: ci-arduino-3
-            board: esp32-s2-saola-1
-          - env: ci-arduino-3
-            board: esp32-s3-devkitc-1
-          - env: ci-arduino-3
-            board: esp32-c3-devkitc-02
-          - env: ci-arduino-3
-            board: esp32-c6-devkitc-1
+        board:
+          [
+            "esp32dev",
+            "esp32-s2-saola-1",
+            "esp32-s3-devkitc-1",
+            "esp32-c3-devkitc-02",
+            "esp32-c6-devkitc-1",
+          ]
 
     steps:
       - name: Checkout
@@ -115,11 +103,11 @@ jobs:
           pip install --upgrade cryptography
           pip install --upgrade intelhex
 
-      - name: Build Examples
-        run: |
-          for i in `ls examples`; do
-            echo "============================================================="
-            echo "Building examples/$i..."
-            echo "============================================================="
-            PLATFORMIO_SRC_DIR=examples/$i PIO_BOARD=${{ matrix.board }} pio run -e ${{ matrix.env }}
-          done
+      - name: Build AsyncTaskManager
+        run: PLATFORMIO_SRC_DIR=examples/AsyncTaskManager PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
+      - name: Build Json
+        run: PLATFORMIO_SRC_DIR=examples/Json PIO_BOARD=${{ matrix.board }} pio run -e ci-json
+      - name: Build TaskManager
+        run: PLATFORMIO_SRC_DIR=examples/TaskManager PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
+      - name: Build Watchdog
+        run: PLATFORMIO_SRC_DIR=examples/Watchdog PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3

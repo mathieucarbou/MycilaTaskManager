@@ -5,6 +5,7 @@
 #pragma once
 
 #include <Print.h>
+#include <esp32-hal.h>
 #include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
