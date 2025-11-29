@@ -21,10 +21,10 @@
 #include <memory>
 #include <utility>
 
-#define MYCILA_TASK_MANAGER_VERSION          "4.2.4"
+#define MYCILA_TASK_MANAGER_VERSION          "4.2.5"
 #define MYCILA_TASK_MANAGER_VERSION_MAJOR    4
 #define MYCILA_TASK_MANAGER_VERSION_MINOR    2
-#define MYCILA_TASK_MANAGER_VERSION_REVISION 4
+#define MYCILA_TASK_MANAGER_VERSION_REVISION 5
 
 namespace Mycila {
   class Task {
