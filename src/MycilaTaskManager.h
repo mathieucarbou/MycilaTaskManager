@@ -127,6 +127,10 @@ namespace Mycila {
         return diff >= _intervalMs ? 0 : _intervalMs - diff;
       }
 
+      // get the last task end time in milliseconds
+      // 0 means the task has never run yet or an early run was requested
+      uint32_t lastEndTime() const { return _lastEnd; }
+
       // check if the task is scheduled to be run, meaning it is enabled, not paused and the interval will be reached
       bool scheduled() const { return enabled() && !_paused; }
 
