@@ -2,70 +2,90 @@
 /*
  * Copyright (C) Mathieu Carbou
  *
- * Shows what a single Task can do on its own, without a manager, and how to read its
- * execution state (v5): IDLE, RUNNING (the task function only) and FINALIZING
- * (the function returned, statistics and onDone are still running).
+ * A task driven by hand, without a manager, and the v5 execution state:
+ * IDLE, RUNNING (the task function only) and FINALIZING (the function
+ * returned, statistics and onDone are still running).
  *
- * Serial output shows:
- *  - the difference between running() and active() while onDone executes
- *  - tryRun() honouring the interval, forceRun() bypassing everything
- *  - requestEarlyRun() ignoring the interval once
- *  - remainingTime() counting down to the next run
+ * Verified properties, each printed as PASS/FAIL:
+ *  - tryRun() honours the interval
+ *  - requestEarlyRun() ignores the interval once
+ *  - forceRun() bypasses the interval AND the paused state
+ *  - running() is false while onDone runs, active() is true
  */
 #include <Arduino.h>
 #include <MycilaTaskManager.h>
 
-Mycila::Task led("led", Mycila::Task::Type::FOREVER, [](void*) {
-  // in a real sketch this would blink an LED
-  Serial.println("[led] blink");
-});
+static int g_pass = 0;
+static int g_fail = 0;
 
-void observe(const char* when) {
-  Serial.printf("[observe] %s: state=%d running=%d active=%d remaining=%lu paused=%d\n",
-                when,
-                (int)led.state(),
-                (int)led.running(),
-                (int)led.active(),
-                (unsigned long)led.remainingTime(),
-                (int)led.paused());
+static void check(bool cond, const char* what) {
+  Serial.printf("%s: %s\n", cond ? "PASS" : "FAIL", what);
+  if (cond)
+    g_pass++;
+  else
+    g_fail++;
 }
+
+uint32_t fnRuns = 0;
+uint32_t doneRuns = 0;
+bool sawFinalizingWhileDone = false;
+
+Mycila::Task task("task", Mycila::Task::Type::FOREVER, [](void*) {
+  fnRuns++;
+  Serial.println("[task] function running");
+});
 
 void setup() {
   Serial.begin(115200);
   while (!Serial)
     continue;
+  Serial.println("\n== TaskStates example ==");
 
-  // 1. a task with an interval is not due yet: tryRun() honours the interval
-  led.setInterval(2000);
-  observe("interval set to 2000 ms");
-  if (!led.tryRun())
-    Serial.println("[tryRun] not due yet, skipped (2000 ms interval)");
-
-  // 2. requestEarlyRun() ignores the interval for the next run only
-  led.requestEarlyRun();
-  if (led.tryRun())
-    Serial.println("[tryRun] early run requested: ran immediately");
-  observe("after the early run");
-
-  // 3. forceRun() runs the task now, ignoring the interval AND the paused state
-  led.pause();
-  led.forceRun();
-  Serial.println("[forceRun] ran although the task is paused");
-  observe("after forceRun");
-
-  // 4. running() vs active(): the task function returned, but onDone is still running.
-  //    while onDone executes, the state is FINALIZING: running() is false, active() is true.
-  led.resume();
-  led.onDone([](const Mycila::Task& me, uint32_t elapsed) {
-    Serial.printf("[onDone] elapsed=%lu ms, state=%d (FINALIZING), running()=%d, active()=%d\n",
-                  (unsigned long)elapsed,
-                  (int)me.state(),
-                  (int)me.running(),
-                  (int)me.active());
-    delay(50); // simulate work done in the callback
+  task.onDone([](const Mycila::Task& me, uint32_t) {
+    doneRuns++;
+    // while this callback runs, the state is FINALIZING: running() false, active() true
+    if (me.state() == Mycila::Task::State::FINALIZING && !me.running() && me.active())
+      sawFinalizingWhileDone = true;
+    Serial.println("[task] onDone running");
   });
-  led.forceRun();
-  observe("after forceRun with onDone: the callback is done, back to IDLE");
+
+  // 1. a task that never ran is due immediately, even with an interval:
+  //    lastEndTime() == 0 means "due now" (see shouldRun())
+  task.setInterval(5000);
+  check(task.lastEndTime() == 0, "the task has never run, lastEndTime() is 0");
+  check(task.shouldRun(), "never-run task is due immediately");
+  check(task.tryRun(), "tryRun() ran the never-run task");
+  check(fnRuns == 1, "the function ran exactly once");
+  check(sawFinalizingWhileDone, "onDone observed FINALIZING: running() false, active() true");
+  check(doneRuns == 1, "onDone ran once");
+  check(task.state() == Mycila::Task::State::IDLE, "back to IDLE after onDone");
+
+  // 2. the interval clock was re-based by the run: not due yet
+  check(!task.shouldRun(), "not due: the interval restarted after the run");
+  check(!task.tryRun(), "tryRun() now honours the 5 s interval");
+  check(task.remainingTime() > 4000, "remaining time is close to 5 s");
+
+  // 3. requestEarlyRun() ignores the interval, once
+  task.requestEarlyRun();
+  check(task.earlyRunRequested(), "early run requested");
+  check(task.tryRun(), "tryRun() ran after requestEarlyRun()");
+  check(fnRuns == 2, "the function ran a second time");
+  check(doneRuns == 2, "onDone ran a second time");
+
+  // 4. forceRun() bypasses the interval AND the paused state
+  task.pause();
+  check(task.paused(), "task paused");
+  check(!task.shouldRun(), "paused task is not scheduled");
+  task.forceRun();
+  check(fnRuns == 3, "forceRun() ran although the task is paused");
+  check(task.paused(), "the task is still paused after forceRun()");
+
+  // 5. tryRun() on a paused task does nothing
+  check(!task.tryRun(), "tryRun() skipped a paused task");
+  check(fnRuns == 3, "no additional run");
+
+  Serial.printf("== RESULT: %d passed, %d failed ==\n", g_pass, g_fail);
+  Serial.println("== TaskStates example complete ==");
 }
 
 void loop() {

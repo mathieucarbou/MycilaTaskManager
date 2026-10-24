@@ -2,72 +2,85 @@
 /*
  * Copyright (C) Mathieu Carbou
  *
- * Demonstrates the use case from issue #18: stop the async worker, wait for a confirmed pause,
- * perform an operation requiring exclusive access to a shared resource, then continue.
+ * The issue #18 scenario: quiesce an async manager before exclusive access
+ * to a shared resource, then continue without disturbing task state.
  *
- * Two things are shown:
- *  - a producer task whose onDone re-arms a follow-up task: the follow-up cannot run while the
- *    manager is confirmed paused, because the pause gate is checked between two executions
- *  - a completed ONCE task keeps its state across pause()/resume(): resume() does not re-arm it
+ * Verified properties, each printed as PASS/FAIL:
+ *  - a producer whose onDone re-arms a follow-up task cannot make it run
+ *    while the manager is paused (the gate, not the task, decides)
+ *  - a completed ONCE task stays completed across pause()/resume()
+ *  - only a confirmed pause (state() == PAUSED) means no callback is active
+ *  - resume() reopens the gate and the tasks continue
+ *
+ * The maintenance runs from a separate FreeRTOS task, as an OTA would.
  */
 #include <Arduino.h>
 #include <MycilaTaskManager.h>
 
+static int g_pass = 0;
+static int g_fail = 0;
+
+static void check(bool cond, const char* what) {
+  Serial.printf("%s: %s\n", cond ? "PASS" : "FAIL", what);
+  if (cond)
+    g_pass++;
+  else
+    g_fail++;
+}
+
 Mycila::TaskManager manager("bg");
 
-// The shared resource the tasks and the maintenance operation both need.
-portMUX_TYPE resourceMux = portMUX_INITIALIZER_UNLOCKED;
-int resourceUsers = 0;
+uint32_t producerRuns = 0;
+uint32_t followUpRuns = 0;
+uint32_t initRuns = 0;
 
-// Re-armed by the producer's onDone, so the producer schedules work *after* a pause is requested.
-Mycila::Task followUp("followUp", Mycila::Task::Type::ONCE, [](void*) {
-  portENTER_CRITICAL(&resourceMux);
-  resourceUsers++;
-  portEXIT_CRITICAL(&resourceMux);
-  Serial.println("[followUp] used the shared resource");
-});
+// re-armed by the producer's onDone, so the producer schedules work
+Mycila::Task followUp("followUp", Mycila::Task::Type::ONCE, [](void*) { followUpRuns++; });
 
-Mycila::Task producer("producer", [](void*) {
-  Serial.println("[producer] working");
-});
+Mycila::Task producer("producer", [](void*) { producerRuns++; });
 
-// Completes and pauses itself: it must stay completed after a manager resume().
-Mycila::Task initTask("init", Mycila::Task::Type::ONCE, [](void*) {
-  Serial.println("[init] initialization done");
-});
+// completes and pauses itself: it must stay completed across pause()/resume()
+Mycila::Task initTask("init", Mycila::Task::Type::ONCE, [](void*) { initRuns++; });
 
-// A maintenance request raised from an unrelated task, as an OTA or reset would.
-volatile bool maintenanceRequested = false;
+volatile int maintenancePhase = 0;
 
 void maintenanceTask(void*) {
   for (;;) {
-    if (maintenanceRequested) {
-      maintenanceRequested = false;
+    if (maintenancePhase == 1) {
+      maintenancePhase = 2;
 
-      // 1. request the pause: non-blocking, does not touch any task
+      // request the pause: non-blocking, does not touch any task
       manager.pause();
+      check(manager.state() == Mycila::TaskManager::State::PAUSING ||
+                manager.state() == Mycila::TaskManager::State::PAUSED,
+            "pause() moved the manager out of RUNNING");
 
-      // 2. wait for the confirmation: only PAUSED guarantees no callback is active
+      // wait for the confirmation: only PAUSED guarantees no callback is active
       if (!manager.waitForPaused(5000)) {
-        Serial.println("[maintenance] pause not confirmed, aborting (no protected work)");
-        manager.resume(); // cancel the request
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        check(false, "pause confirmed within 5 s");
+        manager.resume();
+        maintenancePhase = 4;
         continue;
       }
+      check(true, "pause confirmed within 5 s");
 
-      // 3. exclusive access: no task of this manager is running, onDone included,
-      //    and none will start until resume()
-      portENTER_CRITICAL(&resourceMux);
-      int users = resourceUsers;
-      portEXIT_CRITICAL(&resourceMux);
-      Serial.printf("[maintenance] protected work, resource used %d time(s)\n", users);
-      Serial.printf("[maintenance] init task paused=%d (must stay 1)\n", initTask.paused());
+      // exclusive access: no task of this manager is running, onDone included
+      check(manager.paused(), "manager reports paused");
+      uint32_t followDuringPause = followUpRuns;
+      delay(100); // hold the pause: if the gate leaked, the worker would run tasks
+      check(followUpRuns == followDuringPause, "re-armed followUp did not run while paused");
+      check(initTask.paused(), "completed ONCE task stayed paused during the manager pause");
+      check(producerRuns > 0, "producer did run before the pause");
 
-      // 4. continue: task states, intervals and timestamps were never modified
       manager.resume();
-      Serial.println("[maintenance] resumed");
+      maintenancePhase = 3;
+    } else if (maintenancePhase == 3) {
+      // after resume: task state was never modified
+      check(initRuns == 1, "init ran exactly once (never re-armed by resume)");
+      delay(500);
+      maintenancePhase = 4;
     }
-    vTaskDelay(pdMS_TO_TICKS(10));
+    delay(10);
   }
 }
 
@@ -75,11 +88,11 @@ void setup() {
   Serial.begin(115200);
   while (!Serial)
     continue;
+  Serial.println("\n== PauseResume example ==");
 
   producer.setInterval(300);
   producer.onDone([](const Mycila::Task&, uint32_t) {
-    // schedules more work from a callback: a plain task resume cannot bypass the manager gate
-    followUp.resume();
+    followUp.resume(); // schedules more work from a callback: cannot bypass the gate
   });
   manager.addTask(producer);
 
@@ -93,11 +106,18 @@ void setup() {
 
   xTaskCreateUniversal(maintenanceTask, "maintenance", 4096, nullptr, 1, nullptr, ARDUINO_RUNNING_CORE);
 
-  Serial.println("Type 'm' to request a maintenance pause");
+  // let the producer run a few times, then request the maintenance pause
+  delay(1500);
+  maintenancePhase = 1;
 }
 
 void loop() {
-  if (Serial.available() && Serial.read() == 'm')
-    maintenanceRequested = true;
-  vTaskDelay(pdMS_TO_TICKS(50));
+  if (maintenancePhase == 4) {
+    delay(600); // give the worker time to dispatch the re-armed followUp
+    check(followUpRuns > 0, "followUp ran after resume() (the producer kept re-arming it)");
+    Serial.printf("== RESULT: %d passed, %d failed ==\n", g_pass, g_fail);
+    Serial.println("== PauseResume example complete ==");
+    vTaskDelete(NULL);
+  }
+  vTaskDelay(pdMS_TO_TICKS(10));
 }

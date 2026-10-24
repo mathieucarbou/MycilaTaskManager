@@ -1,55 +1,85 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (C) Mathieu Carbou
+ *
+ * A manager running in its own FreeRTOS task: the Arduino loop() is free.
+ * Tasks chained through onDone still run on the worker, and the manager
+ * keeps running while loop() does other work.
+ *
+ * Each property prints PASS/FAIL and the sketch ends with a summary, so the
+ * output can be verified automatically.
+ */
 #include <Arduino.h>
 #include <MycilaTaskManager.h>
 
-Mycila::TaskManager loopTaskManager("loop()");
+static int g_pass = 0;
+static int g_fail = 0;
 
-Mycila::Task sayHello("sayHello", [](void* params) { Serial.println("Hello"); delay(random(1, 500)); });
-Mycila::Task sayGoodbye("sayGoodbye", [](void* params) { Serial.println("Hello"); delay(random(1, 500)); });
-Mycila::Task ping("ping", [](void* params) { Serial.println((const char*)params); delay(random(1, 500)); });
-Mycila::Task output("output", [](void* params) { loopTaskManager.log(); });
+static void check(bool cond, const char* what) {
+  Serial.printf("%s: %s\n", cond ? "PASS" : "FAIL", what);
+  if (cond)
+    g_pass++;
+  else
+    g_fail++;
+}
 
-char* params = "Pong";
+Mycila::TaskManager bgManager("bg");
+
+Mycila::Task tick("tick", Mycila::Task::Type::FOREVER, [](void*) { /* no print: counted below */ });
+
+uint32_t tickRuns = 0;
+uint32_t chainedRuns = 0;
+Mycila::Task chained("chained", Mycila::Task::Type::ONCE, [](void*) { /* counted below */ });
 
 void setup() {
   Serial.begin(115200);
   while (!Serial)
     continue;
+  Serial.println("\n== AsyncTaskManager example ==");
 
-  sayHello.setType(Mycila::Task::Type::FOREVER);
-  sayHello.setInterval(1000);
-  sayHello.onDone([](const Mycila::Task& me, uint32_t elapsed) {
-    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.name(), elapsed);
+  tick.setInterval(500);
+  tick.onDone([](const Mycila::Task&, uint32_t) {
+    tickRuns++;
+    // chain another task from the callback: it will be dispatched by the worker
+    chained.resume();
   });
-  sayHello.setEnabled(true);
-  loopTaskManager.addTask(sayHello);
+  bgManager.addTask(tick);
 
-  sayGoodbye.setType(Mycila::Task::Type::FOREVER);
-  sayGoodbye.setInterval(3000);
-  sayGoodbye.onDone([](const Mycila::Task& me, uint32_t elapsed) {
-    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.name(), elapsed);
-    ping.setData(params);
-    ping.resume();
-  });
-  sayGoodbye.setEnabled(true);
-  loopTaskManager.addTask(sayGoodbye);
+  chained.onDone([](const Mycila::Task&, uint32_t) { chainedRuns++; });
+  bgManager.addTask(chained);
 
-  ping.setType(Mycila::Task::Type::ONCE);
-  ping.onDone([](const Mycila::Task& me, uint32_t elapsed) {
-    ESP_LOGD("app", "Task '%s' executed in %" PRIu32 " us", me.name(), elapsed);
-  });
-  ping.setEnabled(true);
-  loopTaskManager.addTask(ping);
+  // start the manager in its own FreeRTOS task; loop() stays free
+  check(bgManager.asyncStart(4096, -1, -1, 10, true), "asyncStart() created the worker task");
+  check(bgManager.state() == Mycila::TaskManager::State::RUNNING, "manager is RUNNING");
 
-  output.setType(Mycila::Task::Type::FOREVER);
-  output.setInterval(5000);
-  output.setEnabled(true);
-  loopTaskManager.addTask(output);
-
-  loopTaskManager.enableProfiling(6);
-
-  loopTaskManager.asyncStart();
+  check(!tick.paused(), "interval task is running on the worker");
+  check(chained.paused(), "chained ONCE task starts paused");
 }
 
 void loop() {
-  vTaskDelete(NULL);
+  // loop() is free: verify the async behaviour from here, every 500 ms
+  static uint32_t lastCheck = 0;
+  if (millis() - lastCheck < 500)
+    return;
+  lastCheck = millis();
+
+  static int checks = 0;
+  checks++;
+  if (checks == 6) {
+    // ~3 s: the worker dispatched the interval task about 6 times
+    check(tickRuns >= 4 && tickRuns <= 8, "tick ran ~6 times in 3 s on the worker");
+    check(chainedRuns == tickRuns, "every tick chained exactly one ONCE run");
+  } else if (checks == 12) {
+    // ~6 s: still running, the manager never paused
+    check(tickRuns >= 10, "tick kept running at 6 s");
+    check(bgManager.state() == Mycila::TaskManager::State::RUNNING, "manager never left RUNNING");
+
+    // the worker is a real FreeRTOS task with our name
+    check(xTaskGetHandle("bg") != NULL, "worker task 'bg' exists");
+  } else if (checks == 14) {
+    bgManager.asyncStop();
+    Serial.printf("== RESULT: %d passed, %d failed ==\n", g_pass, g_fail);
+    Serial.println("== AsyncTaskManager example complete ==");
+    vTaskDelete(NULL);
+  }
 }
