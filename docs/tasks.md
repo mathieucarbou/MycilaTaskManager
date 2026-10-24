@@ -180,7 +180,7 @@ sayHello.onDone([](const Mycila::Task& me, uint32_t elapsed) {
 });
 ```
 
-`elapsed` is the raw execution time in **milliseconds** (`millis()` difference), independent of any profiling configuration. The callback runs synchronously at the end of the task, still inside `_run()`, and can safely change the state of other tasks (but not of the task currently running).
+`elapsed` is the raw execution time in **milliseconds** (`millis()` difference), independent of any profiling configuration. The callback runs synchronously at the end of the task, still inside `_run()`, and can safely change the state of other tasks (but not of the task currently running). While it runs, the task reports `Task::State::FINALIZING`, so `active()` stays `true` until the callback returns.
 
 Disable callbacks entirely with `-D MYCILA_TASK_MANAGER_NO_CALLBACKS`.
 
@@ -200,8 +200,32 @@ task.setEnabled(true);   // re-enable
 | `paused()`     | the task is paused (including a finished `ONCE`)   |
 | `scheduled()`  | `enabled() && !paused()`                           |
 | `shouldRun()`  | `scheduled()` and the interval has elapsed         |
-| `running()`    | the task function is currently executing           |
+| `running()`    | the task **function** is currently executing       |
+| `active()`     | the task function **or its `onDone`** is executing |
+| `idle()`       | the task is executing nothing at all              |
 | `earlyRunRequested()` | `lastEndTime() == 0`                        |
+
+## Execution State
+
+An execution is not finished when the task function returns: the `onDone` callback still runs, and it is allowed to touch shared resources (that is exactly how a task chains another one). Use `state()` to see where the task is:
+
+```cpp
+enum class State : uint8_t {
+  IDLE,       // nothing executing
+  RUNNING,    // the task function is executing
+  FINALIZING  // the function returned, the onDone callback (and statistics) are running
+};
+```
+
+```cpp
+switch (task.state()) {
+  case Mycila::Task::State::IDLE:       break; // safe: no callback of this task can be active
+  case Mycila::Task::State::RUNNING:    break; // task code only
+  case Mycila::Task::State::FINALIZING: break; // task code returned, onDone is still running
+}
+```
+
+`running()` is strictly the `RUNNING` state; `active()` is shorthand for `state() != State::IDLE`. When you must be sure a task will not touch a shared resource anymore, wait for `active()` to become `false` — waiting for `running()` is not enough, because `onDone` can still resume and start another task. `TaskManager::waitForAllTasksToComplete()` uses `active()` for that reason.
 
 ## Running a Task
 

@@ -43,6 +43,7 @@ void outputJson() {
       "paused": false,
       "enabled": true,
       "interval": 1000,
+      "state": "IDLE",
       "stats": {
         "count": 15,
         "unit_divider": 1,
@@ -54,7 +55,8 @@ void outputJson() {
       "type": "ONCE",
       "paused": true,
       "enabled": true,
-      "interval": 0
+      "interval": 0,
+      "state": "IDLE"
     }
   ]
 }
@@ -69,6 +71,7 @@ void outputJson() {
 | `paused`   | boolean | Current pause state                            |
 | `enabled`  | boolean | Result of the enabled predicate                |
 | `interval` | number  | Interval in milliseconds                       |
+| `state`    | string  | `"IDLE"`, `"RUNNING"` or `"FINALIZING"`        |
 | `stats`    | object  | Present only if profiling is enabled **and** data was recorded |
 
 ### Statistics fields
@@ -85,6 +88,7 @@ void outputJson() {
 - The `stats` sub-object is emitted only when `_stats` exists **and** both `bins()` and `count()` are non-zero — an idle task produces a compact entry.
 - The manager always emits a `tasks` array, even when it is empty.
 - Neither `lastEndTime()` nor `remainingTime()` is exported: the JSON describes configuration and profiling, not the live scheduling position. Query them through the API if you need them.
+- `state` is instantaneous and racy by nature: it reports what was true when `toJson()` read it, which is only meaningful while nobody else is driving the manager.
 - Both `Task::toJson()` and `BinStatistics::toJson()` are compiled away unless `MYCILA_JSON_SUPPORT` is defined, so there is zero cost when the feature is off.
 - Combine with [Profiling & Statistics](statistics.md) — without profiling there is no `stats` key.
 

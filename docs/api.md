@@ -75,7 +75,10 @@ The destructor frees the task's `BinStatistics`, so a profiled task must not be 
 
 ```cpp
 enum class Type { ONCE, FOREVER };
+enum class State : uint8_t { IDLE, RUNNING, FINALIZING };
 ```
+
+`State` describes the current execution, not the schedule: `RUNNING` is the task function, `FINALIZING` is the `onDone` callback plus statistics recording after the function returned, and `IDLE` is neither.
 
 ### Configuration
 
@@ -114,7 +117,10 @@ void*       data() const;                        // requires !NO_PARAMS
 
 bool enabled() const;                            // predicate result
 bool paused() const;
-bool running() const;
+State state() const;                             // IDLE, RUNNING or FINALIZING
+bool running() const;                            // state() == RUNNING (function only)
+bool active() const;                             // state() != IDLE (function or onDone)
+bool idle() const;                               // state() == IDLE
 bool scheduled() const;                          // enabled() && !paused()
 bool shouldRun() const;                          // scheduled() && interval elapsed
 bool earlyRunRequested() const;                  // lastEndTime() == 0

@@ -110,7 +110,10 @@ tasks.waitForAllTasksToComplete();      // poll every 10 ms
 tasks.waitForAllTasksToComplete(50);    // poll every 50 ms
 ```
 
-This busy-waits while any task reports `running() == true`. It blocks the caller, so it is only appropriate during shutdown or when you knowingly need synchronous completion (e.g. flushing before deep sleep).
+This busy-waits while any task reports `active() == true`, i.e. while its function or its `onDone` callback is still executing. It blocks the caller, so it is only appropriate during shutdown or when you knowingly need synchronous completion (e.g. flushing before deep sleep).
+
+!!! warning "`waitForAllTasksToComplete()` is not a dispatch boundary"
+It waits for the tasks that are executing *now*. It does not prevent an `onDone` that already resumed a task from having that task dispatched by the manager on the next `loop()` pass. If you need "no task of this manager will run after this point", the manager itself has to be paused — see [Async Execution](async.md).
 
 ## Querying the Manager
 

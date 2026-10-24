@@ -36,6 +36,15 @@ namespace Mycila {
         FOREVER
       };
 
+      enum class State : uint8_t {
+        // the task is not executing anything
+        IDLE,
+        // the task function is executing
+        RUNNING,
+        // the task function returned and its onDone callback is executing
+        FINALIZING
+      };
+
 #ifndef MYCILA_TASK_MANAGER_NO_PARAMS
       typedef std::function<void(void* params)> Function;
 #else
@@ -161,8 +170,15 @@ namespace Mycila {
         _run(millis());
         return *this;
       }
-      // check if the task is currently running
-      bool running() const { return _running; }
+      // get the execution state of the task
+      State state() const { return _state; }
+      // check if the task function is currently executing (the onDone callback is not part of it)
+      bool running() const { return _state == State::RUNNING; }
+      // check if the task function or its onDone callback is currently executing
+      // this is the condition to wait for when the task must not touch shared resources anymore
+      bool active() const { return _state != State::IDLE; }
+      // check if the task is not executing anything
+      bool idle() const { return _state == State::IDLE; }
 
       // request an early run of the task and do not wait for the interval to be reached
       Task& requestEarlyRun() {
@@ -210,6 +226,7 @@ namespace Mycila {
         root["paused"] = _paused;
         root["enabled"] = enabled();
         root["interval"] = _intervalMs;
+        root["state"] = _state == State::RUNNING ? "RUNNING" : (_state == State::FINALIZING ? "FINALIZING" : "IDLE");
   #ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (_stats && _stats->bins() && _stats->count())
           _stats->toJson(root["stats"].to<JsonObject>());
@@ -222,10 +239,15 @@ namespace Mycila {
       const Function _fn;
 
       Predicate _enabled = nullptr;
-      bool _paused = false;
-      bool _running = false;
+      // _paused, _state and TaskManager::_allowedToRun are volatile because they are read from
+      // another FreeRTOS task than the one writing them. volatile prevents the compiler from
+      // caching them in a register; it does not make a read-modify-write sequence atomic.
+      volatile bool _paused = false;
+      volatile State _state = State::IDLE;
       Type _type = Type::FOREVER;
       uint32_t _intervalMs = 0;
+      // written by the worker, read by the application: not volatile because polling it from
+      // another task is inherently racy, use state()/active() as the execution signal instead
       uint32_t _lastEnd = 0;
 #ifndef MYCILA_TASK_MANAGER_NO_STATS
       Mycila::BinStatistics* _stats = nullptr;
@@ -238,13 +260,14 @@ namespace Mycila {
 #endif
 
       void _run(uint32_t now) {
-        _running = true;
+        _state = State::RUNNING;
 #ifndef MYCILA_TASK_MANAGER_NO_PARAMS
         _fn(_params);
 #else
         _fn();
 #endif
-        _running = false;
+        // the task code is done, but the execution is not: everything below can still touch shared resources
+        _state = State::FINALIZING;
         _lastEnd = millis();
         if (_type == Type::ONCE)
           _paused = true;
@@ -259,6 +282,7 @@ namespace Mycila {
         if (_onDone)
           _onDone(*this, elapsed);
 #endif
+        _state = State::IDLE;
       }
   };
 
@@ -328,7 +352,9 @@ namespace Mycila {
         do {
           allDone = true;
           for (const auto& task : _tasks) {
-            if (task->running()) {
+            // wait for the task code, its onDone callback and its statistics to be done,
+            // otherwise a callback can still resume another task after we return
+            if (task->active()) {
               allDone = false;
               break;
             }
@@ -435,7 +461,8 @@ namespace Mycila {
       // async
       TaskHandle_t _taskManagerHandle = NULL;
       uint32_t _delay = 0;
-      bool _allowedToRun = false;
+      // stop request: written by asyncStop() from the caller's task, read by the worker loop
+      volatile bool _allowedToRun = false;
       static void _asyncTaskManager(void* params) {
         TaskManager* taskManager = reinterpret_cast<TaskManager*>(params);
         taskManager->_allowedToRun = true;
