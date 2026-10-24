@@ -225,7 +225,10 @@ switch (task.state()) {
 }
 ```
 
-`running()` is strictly the `RUNNING` state; `active()` is shorthand for `state() != State::IDLE`. When you must be sure a task will not touch a shared resource anymore, wait for `active()` to become `false` — waiting for `running()` is not enough, because `onDone` can still resume and start another task. `TaskManager::waitForAllTasksToComplete()` uses `active()` for that reason.
+`running()` is strictly the `RUNNING` state; `active()` is shorthand for `state() != State::IDLE`. When you must be sure a task will not touch a shared resource anymore, wait for `active()` to become `false` — waiting for `running()` is not enough, because `onDone` can still resume and start another task. `TaskManager::waitForAllTasksToComplete()` uses `active()` for that reason, and returns immediately when called from the manager's own worker or from a callback, since the calling task would be active forever.
+
+!!! warning "v5: `running()` no longer covers `onDone`"
+In v4, `running()` became `false` before the `onDone` callback ran. Code polling `running()` to know when a task was completely done would exit too early. Use `active()` instead — see [Migration](migration.md).
 
 ## Running a Task
 

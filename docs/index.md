@@ -70,6 +70,7 @@ void loop() {
 - [Async Execution](async.md) — run a manager in a background FreeRTOS task
 - [Profiling & Statistics](statistics.md) — understand where time is spent
 - [API Reference](api.md) and the generated [C++ API](cppapi/annotated.md)
+- [Migration](migration.md) — coming from v4? Read this first: `pause()`, `resume()` and `waitForAllTasksToComplete()` changed behaviour
 
 ## License
 

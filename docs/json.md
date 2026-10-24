@@ -31,6 +31,7 @@ void outputJson() {
 ```json
 {
   "name": "loop()",
+  "state": "RUNNING",
   "stats": {
     "count": 15,
     "unit_divider": 1,
@@ -62,6 +63,15 @@ void outputJson() {
 }
 ```
 
+### Manager fields
+
+| Field   | Type   | Description                                     |
+| :------ | :----- | :---------------------------------------------- |
+| `name`  | string | Manager name                                    |
+| `state` | string | `"RUNNING"`, `"PAUSING"` or `"PAUSED"`          |
+| `stats` | object | Present only if profiling is enabled **and** data was recorded |
+| `tasks` | array  | Every registered task                           |
+
 ### Task fields
 
 | Field      | Type    | Description                                    |
@@ -89,6 +99,7 @@ void outputJson() {
 - The manager always emits a `tasks` array, even when it is empty.
 - Neither `lastEndTime()` nor `remainingTime()` is exported: the JSON describes configuration and profiling, not the live scheduling position. Query them through the API if you need them.
 - `state` is instantaneous and racy by nature: it reports what was true when `toJson()` read it, which is only meaningful while nobody else is driving the manager.
+- The manager `state` and the task `state` are different enums with different values: `RUNNING`/`PAUSING`/`PAUSED` for the dispatch gate, `IDLE`/`RUNNING`/`FINALIZING` for a single execution.
 - Both `Task::toJson()` and `BinStatistics::toJson()` are compiled away unless `MYCILA_JSON_SUPPORT` is defined, so there is zero cost when the feature is off.
 - Combine with [Profiling & Statistics](statistics.md) — without profiling there is no `stats` key.
 

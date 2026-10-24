@@ -7,7 +7,7 @@ Add to your `platformio.ini`:
 ```ini
 [env:myproject]
 lib_deps =
-    mathieucarbou/MycilaTaskManager@^4.2.5
+    mathieucarbou/MycilaTaskManager@^5.0.0
 ```
 
 ## Arduino IDE

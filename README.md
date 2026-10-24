@@ -19,7 +19,7 @@ framework = arduino
 board = esp32dev
 
 lib_deps =
-  mathieucarbou/MycilaTaskManager@^4.2.5
+  mathieucarbou/MycilaTaskManager@^5.0.0
 ```
 
 ### Arduino IDE
@@ -86,7 +86,7 @@ build_flags =
 Always defined, for runtime or compile-time checks:
 
 ```cpp
-MYCILA_TASK_MANAGER_VERSION           // "4.2.5"
+MYCILA_TASK_MANAGER_VERSION           // "5.0.0"
 MYCILA_TASK_MANAGER_VERSION_MAJOR     // 4
 MYCILA_TASK_MANAGER_VERSION_MINOR     // 2
 MYCILA_TASK_MANAGER_VERSION_REVISION  // 5

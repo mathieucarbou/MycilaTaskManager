@@ -97,6 +97,24 @@ tasks.enableProfiling(10, 6, 1);
 
 `asyncStop()` only clears a flag, and the background task sets that flag to `true` when it starts. Stopping immediately after `asyncStart()` can lose the request, leaving a task that can no longer be stopped because the handle was already cleared. Start the async manager once and use `pause()` / `resume()` to control it — see [Async Execution](async.md).
 
+### `waitForPaused()` always times out
+
+Three causes, in order of likelihood:
+
+1. **You called it from a task of the manager, or from one of its callbacks.** A pause requested from inside a callback can only be confirmed once that callback returns, so `state()` stays `PAUSING`. `waitForPaused()` detects both the worker thread and the thread driving `loop()`, and returns immediately in that case: request the pause from the callback, and wait for it *outside*.
+2. **Nobody drives the loop.** In synchronous mode, `state()` is updated either by `loop()` or, when the manager is idle, directly by `pause()`. If you removed `loop()` without calling `asyncStart()`, nothing dispatches at all.
+3. **The manager is not the one you think.** Several managers each have their own gate; `tasks.pause()` does not pause `otherTasks`.
+
+### `waitForAllTasksToComplete()` returns immediately
+
+It was called from this manager's worker or from one of its callbacks. The calling task is itself `active()`, so the wait could never complete: the function detects that and returns the current state instead of deadlocking. Call it from a context outside the manager.
+
+### `pause()` does not stop a task
+
+`TaskManager::pause()` closes the manager's dispatch gate — it does **not** touch per-task state. A task which is mid-execution finishes, `onDone` included. If you actually wanted to flip every task to paused, use `pauseTasks()`.
+
+Also check `forceRun()`: it runs a task directly, bypassing both the pause state and the manager gate. It is not dispatch, and no manager pause can prevent it.
+
 ### `b = a;` does not compile on a `Task`
 
 `Task` has a `const std::function` member, which deletes its copy assignment operator. The copy constructor still works. Declare tasks at file scope or as members instead of assigning them.

@@ -1,6 +1,6 @@
 # Examples
 
-The library ships four examples covering the main usage patterns.
+The library ships five examples covering the main usage patterns.
 
 ## Available Examples
 
@@ -10,6 +10,7 @@ The library ships four examples covering the main usage patterns.
 | [AsyncTaskManager](https://github.com/mathieucarbou/MycilaTaskManager/tree/main/examples/AsyncTaskManager/) | Manager running in its own FreeRTOS task             |
 | [Watchdog](https://github.com/mathieucarbou/MycilaTaskManager/tree/main/examples/Watchdog/)             | One sync and one async manager, the async one supervised by the TWDT |
 | [Json](https://github.com/mathieucarbou/MycilaTaskManager/tree/main/examples/Json/)                     | JSON export of the task tree alongside classic logging    |
+| [PauseResume](https://github.com/mathieucarbou/MycilaTaskManager/tree/main/examples/PauseResume/)       | Quiesce an async manager before exclusive access, preserving task state |
 
 ## TaskManager
 
@@ -157,6 +158,22 @@ Mycila::Task output("output", [](void* params) {
 ```
 
 Requires `-D MYCILA_JSON_SUPPORT` and ArduinoJson. See [JSON Output](json.md).
+
+## PauseResume
+
+Stops an async manager before touching a shared resource, then continues without disturbing task state:
+
+```cpp
+manager.pause();                        // request: non-blocking, touches no task
+if (!manager.waitForPaused(5000)) {     // confirmed: nothing active, nothing will start
+  manager.resume();                     // cancel the request
+  return;
+}
+// exclusive access — no callback of this manager is running, onDone included
+manager.resume();                       // continue; task states were never modified
+```
+
+The example also shows the two properties that make this safe: a producer whose `onDone` re-arms a follow-up task cannot make it run while the manager is paused, and a completed `ONCE` task stays completed across `pause()` / `resume()`. The manager runs with the TWDT enabled, so a long pause does not trip the watchdog. See [Async Execution](async.md#pausing-the-manager).
 
 ## Building an Example
 

@@ -78,6 +78,10 @@ void loop() {
 !!! note "Implicit delay"
 The default `delayMillis` is **10 ms**, so a bare `tasks.loop()` already throttles the loop to roughly 100 passes per second. Pass `loop(0)` to disable this delay.
 
+The delay only applies to the **synchronous** caller. When the manager runs asynchronously, the background task calls `loop(0)` and paces itself with an interruptible wait, so the delay is never applied twice.
+
+The delay applies **whether or not the manager is paused**: `delayMillis` is the pacing contract of the call, so a paused manager returns `0` (nothing executed) but still waits before returning. This keeps a synchronous `loop()` from becoming a busy loop while paused, which would otherwise starve lower-priority tasks and can trip the task watchdog.
+
 Return value: the number of tasks that were executed during this pass.
 
 ```cpp
@@ -93,27 +97,56 @@ if (tasks.empty()) {
 
 ## Pause, Resume and Enable
 
+The manager and its tasks are paused independently. The manager methods keep their short names; the per-task broadcasts are suffixed so they cannot be confused with them:
+
 ```cpp
-tasks.pause();          // pause every task
-tasks.resume();         // resume every task now
-tasks.resume(1000);     // resume every task, first run in 1 s
+tasks.pause();           // stop dispatching tasks (manager gate)
+tasks.resume();          // reopen the gate, task states untouched
+tasks.pauseTasks();      // pause every task
+tasks.resumeTasks();     // resume every task now
+tasks.resumeTasks(1000); // resume every task, first run in 1 s
 tasks.setEnabled(false); // install a false predicate on every task
 tasks.setEnabled(true);
 ```
 
-These forward to each task, so a task's own state is overwritten. Any predicate previously installed with `setEnabledWhen()` is replaced by `setEnabled()`.
+`pause()` / `resume()` control the **manager**, not the tasks: while paused, the manager stops dispatching between two executions without modifying any per-task state. See [Async Execution](async.md#pausing-the-manager) for the state machine and the "quiesce before OTA" pattern.
+
+`pauseTasks()` / `resumeTasks()` forward to each task, so a task's own state is overwritten. Any predicate previously installed with `setEnabledWhen()` is replaced by `setEnabled()`.
+
+!!! warning "Migrating from v4: `pause()` now pauses the manager"
+`TaskManager::pause()` always meant *pause the manager*, but in v4 it was implemented by pausing every task, while the manager kept dispatching. That is a bug, not a feature: a callback could still resume a task and have it dispatched again. v5 implements what the name says — `pause()` closes the manager's dispatch gate and leaves every task untouched.
+
+The v4 behaviour is still available, explicitly, as `pauseTasks()` / `resumeTasks(delay)`.
+
+Because `pause()` keeps its name and signature, an existing `manager.pause()` still compiles. Audit those calls when moving to v5: if you relied on every task being paused (and stopped the manager yourself), switch to `pauseTasks()`. If you relied on the tasks never running again, the new `pause()` is what you actually wanted, and it is now guaranteed.
+
+`resume()` no longer accepts a delay, so `manager.resume(1000)` fails to compile.
+
+See [Migration](migration.md) for the complete list of v4 → v5 differences.
 
 ## Waiting for Completion
 
 ```cpp
-tasks.waitForAllTasksToComplete();      // poll every 10 ms
-tasks.waitForAllTasksToComplete(50);    // poll every 50 ms
+bool done = tasks.waitForAllTasksToComplete();        // wait forever (0 = no timeout)
+bool quicklyDone = tasks.waitForAllTasksToComplete(500); // wait up to 500 ms, false on timeout
 ```
 
-This busy-waits while any task reports `active() == true`, i.e. while its function or its `onDone` callback is still executing. It blocks the caller, so it is only appropriate during shutdown or when you knowingly need synchronous completion (e.g. flushing before deep sleep).
+Like `loop(0)` means *no delay*, a timeout of `0` means *no timeout*: the call blocks until every task is idle. Any other value is a deadline, and the method returns `false` if it fires.
+
+This polls while any task reports `active() == true`, i.e. while its function, its statistics recording or its `onDone` callback is still executing. It blocks the caller (1 ms poll interval), so it is only appropriate during shutdown or when you knowingly need synchronous completion (e.g. flushing before deep sleep).
+
+It returns immediately when called from this manager's worker or from one of its callbacks, reporting the current state: such a call could never complete, because the calling task is itself active.
 
 !!! warning "`waitForAllTasksToComplete()` is not a dispatch boundary"
-It waits for the tasks that are executing *now*. It does not prevent an `onDone` that already resumed a task from having that task dispatched by the manager on the next `loop()` pass. If you need "no task of this manager will run after this point", the manager itself has to be paused — see [Async Execution](async.md).
+It waits for the tasks that are executing *now*. It does not prevent an `onDone` that already resumed a task from having that task dispatched by the manager on the next `loop()` pass. If you need "no task of this manager will run after this point", pause the manager first — see [Pausing the Manager](async.md#pausing-the-manager):
+
+```cpp
+tasks.pause();
+tasks.waitForPaused(5000);   // confirmed: nothing active, nothing will start
+```
+
+!!! warning "v5: the argument is a timeout, not a poll interval"
+In v4 the argument was the polling interval and the method waited forever. A call like `waitForAllTasksToComplete(50)` now means *give up after 50 ms* and can return `false`. See [Migration](migration.md).
 
 ## Querying the Manager
 
