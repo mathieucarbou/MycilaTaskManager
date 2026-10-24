@@ -1,0 +1,6 @@
+/* Add a visual separator line above the C++ API nav section */
+.md-nav__item--section:has(a[href*="cppapi"]) {
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+}
