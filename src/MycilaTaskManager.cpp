@@ -119,7 +119,7 @@ bool Mycila::TaskManager::waitForAllTasksToComplete(uint32_t timeoutMs) const {
   while (!_allIdle()) {
     if (timeoutMs && millis() - start >= timeoutMs)
       return false;
-    _sleep(10);
+    _sleep(1);
   }
   return true;
 }
