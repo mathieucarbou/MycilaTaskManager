@@ -68,6 +68,7 @@ nav:
   - API Reference: api.md
   - Examples: examples.md
   - Troubleshooting: troubleshooting.md
+  - Migration: migration.md
   - Contributing: contributing.md
   - C++ API:
       - Annotated Classes: cppapi/annotated.md

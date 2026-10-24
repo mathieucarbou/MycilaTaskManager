@@ -172,7 +172,7 @@ const char* name() const;
 
 ```cpp
 size_t loop(uint32_t delayMillis = 10);   // returns the number of tasks executed
-void   waitForAllTasksToComplete(uint32_t intervalMs = 10) const;
+bool   waitForAllTasksToComplete(uint32_t timeoutMs = 0) const;
 
 bool asyncStart(uint32_t stackSize = 4096,
                 BaseType_t priority = -1,
@@ -190,10 +190,17 @@ static bool configureWDT(uint32_t timeoutSeconds = CONFIG_ESP_TASK_WDT_TIMEOUT_S
 ### Control
 
 ```cpp
-void pause();
-void resume(uint32_t delayMillis = 0);
-void setEnabled(bool enabled);
+State state() const;                      // RUNNING, PAUSING or PAUSED
+bool  paused() const;                     // state() == PAUSED
+void  pause();                            // request; stop dispatching between two executions
+void  resume();                           // reopen the gate; task states untouched
+bool  waitForPaused(uint32_t timeoutMs = 0); // wait for the confirmation, false on timeout
+void  pauseTasks();                              // pause every task (manager keeps dispatching)
+void  resumeTasks(uint32_t delayMillis = 0);     // resume every task
+void  setEnabled(bool enabled);
 ```
+
+`pause()` / `resume()` operate on the manager's dispatch gate and never modify a task. `pauseTasks()` / `resumeTasks()` are the per-task broadcasts, which is what `TaskManager::pause()` / `resume()` actually did in v4.
 
 ### Profiling
 
