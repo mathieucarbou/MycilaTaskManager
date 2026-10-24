@@ -1,6 +1,6 @@
 # Examples
 
-The library ships five examples covering the main usage patterns.
+The library ships seven examples covering the main usage patterns.
 
 ## Available Examples
 
@@ -11,6 +11,8 @@ The library ships five examples covering the main usage patterns.
 | [Watchdog](https://github.com/mathieucarbou/MycilaTaskManager/tree/main/examples/Watchdog/)             | One sync and one async manager, the async one supervised by the TWDT |
 | [Json](https://github.com/mathieucarbou/MycilaTaskManager/tree/main/examples/Json/)                     | JSON export of the task tree alongside classic logging    |
 | [PauseResume](https://github.com/mathieucarbou/MycilaTaskManager/tree/main/examples/PauseResume/)       | Quiesce an async manager before exclusive access, preserving task state |
+| [TaskStates](https://github.com/mathieucarbou/MycilaTaskManager/tree/main/examples/TaskStates/)         | Drive a single task by hand and read its execution state |
+| [ConditionalTasks](https://github.com/mathieucarbou/MycilaTaskManager/tree/main/examples/ConditionalTasks/) | Conditional scheduling, the per-task broadcasts and quiescing |
 
 ## TaskManager
 
@@ -174,6 +176,46 @@ manager.resume();                       // continue; task states were never modi
 ```
 
 The example also shows the two properties that make this safe: a producer whose `onDone` re-arms a follow-up task cannot make it run while the manager is paused, and a completed `ONCE` task stays completed across `pause()` / `resume()`. The manager runs with the TWDT enabled, so a long pause does not trip the watchdog. See [Async Execution](async.md#pausing-the-manager).
+
+## TaskStates
+
+A `Task` is useful on its own, without a manager. This example drives one by hand and reads the v5 execution state:
+
+```cpp
+Mycila::Task led("led", Mycila::Task::Type::FOREVER, [](void*) {
+  Serial.println("[led] blink");
+});
+
+led.setInterval(2000);
+led.tryRun();          // skipped: the interval has not elapsed
+led.requestEarlyRun(); // ignore the interval, once
+led.tryRun();          // runs now
+led.pause();
+led.forceRun();        // runs anyway: forceRun() ignores pause and enabled
+```
+
+The key v5 distinction is visible in the `onDone` callback: while it executes, the state is `FINALIZING`, so `running()` is `false` but `active()` is still `true`. Polling `running()` therefore exits before the task has completely finished — `active()` is the condition that covers the whole execution. See [Tasks](tasks.md#execution-state).
+
+## ConditionalTasks
+
+Tasks can appear, disappear and switch on and off at runtime. This example combines the dynamic API:
+
+```cpp
+// the manager owns the task: no global instance to declare
+Mycila::Task& sensor = manager.newTask("sensor", sensorFn);
+sensor.setEnabledWhen([]() { return linkUp; }); // scheduled() is false while down
+
+// the v5 names of the v4 pause()/resume() broadcast
+manager.pauseTasks();
+if (manager.waitForAllTasksToComplete(0)) // 0 = wait forever
+  /* touch what the tasks use */;
+manager.resumeTasks();
+
+// a task can stop itself: pause() from inside is safe
+watchPtr->pause();
+```
+
+`setEnabledWhen()` installs a predicate evaluated on every pass: when it returns `false`, the manager skips the task without touching its state — unlike `pause()`, the task becomes eligible again as soon as the predicate flips back. See [Task Managers](task-managers.md#pause-resume-and-enable).
 
 ## Building an Example
 

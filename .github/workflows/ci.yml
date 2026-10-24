@@ -115,3 +115,7 @@ jobs:
         run: PLATFORMIO_SRC_DIR=examples/Watchdog PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
       - name: Build PauseResume
         run: PLATFORMIO_SRC_DIR=examples/PauseResume PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
+      - name: Build TaskStates
+        run: PLATFORMIO_SRC_DIR=examples/TaskStates PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
+      - name: Build ConditionalTasks
+        run: PLATFORMIO_SRC_DIR=examples/ConditionalTasks PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
