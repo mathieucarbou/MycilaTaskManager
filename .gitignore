@@ -6,3 +6,5 @@
 __pycache__
 /site
 /venv
+idf_component.yml
+idf_component.yml.orig

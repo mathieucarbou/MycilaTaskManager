@@ -106,7 +106,7 @@ namespace Mycila {
         _paused = true;
         return *this;
       }
-      // check is the task is temporary paused
+      // check if the task is temporarily paused
       bool paused() const { return _paused; }
       // resume a paused task
       // if delayMillis is set, the task will resume after the delay
@@ -120,7 +120,7 @@ namespace Mycila {
       }
 
       // get remaining time before next run in milliseconds
-      uint32_t remainingTme() const {
+      uint32_t remainingTime() const {
         if (!_intervalMs)
           return 0;
         uint32_t diff = millis() - _lastEnd;
@@ -174,7 +174,7 @@ namespace Mycila {
 
       // enable profiling of the task
       // binCount is the number of bins to record the number of iterations in each bin.
-      // unitDivider is the divider to se for the unit: 1 for milliseconds, 1000 for seconds, etc
+      // unitDivider is the divider to use for the unit: 1 for milliseconds, 1000 for seconds, etc
       void enableProfiling(uint8_t binCount = 10, uint32_t unitDividerMillis = 1) {
 #ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (!_stats)
@@ -356,7 +356,7 @@ namespace Mycila {
       }
 
       // enable profiling for all tasks, plus the task manager itself
-      // unitDivider is the divider to se for the unit: 1 for milliseconds, 1000 for seconds, etc
+      // unitDivider is the divider to use for the unit: 1 for milliseconds, 1000 for seconds, etc
       void enableProfiling(uint8_t taskManagerBinCount, uint8_t taskBinCount, uint32_t unitDividerMillis = 1) {
 #ifndef MYCILA_TASK_MANAGER_NO_STATS
         if (!_stats)
