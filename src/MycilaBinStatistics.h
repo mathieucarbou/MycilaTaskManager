@@ -16,7 +16,7 @@ namespace Mycila {
   class BinStatistics {
     public:
       // record the number of iterations in each bin.
-      // bin sizing is bases on power of 2, so if binCount = 16, we will have 16 bins:
+      // bin sizing is based on power of 2, so if binCount = 16, we will have 16 bins:
       // bin 0 : 0 <= elapsed < 2^1 (exception for lower bound)
       // bin 1 : 2^1 <= elapsed < 2^2
       // bin 2 : 2^2 <= elapsed < 2^3
@@ -26,7 +26,7 @@ namespace Mycila {
       // bin 15 : 2^15 <= elapsed (exception for upper bound)
       // The unit determines the unit of the elapsed time recorded in the bins.
       // It allows to be more precise depending on the expected task execution durations.
-      // unitDivider is the divider to se for the unit: 1 for milliseconds, 1000 for seconds, etc
+      // unitDivider is the divider to use for the unit: 1 for milliseconds, 1000 for seconds, etc
       explicit BinStatistics(uint8_t binCount, uint32_t unitDivider = 1) : _binCount(binCount), _unitDivider(unitDivider) {
         _bins = new uint16_t[binCount];
         clear();
