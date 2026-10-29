@@ -243,6 +243,12 @@ namespace Mycila {
 #endif
 
       void _run(uint32_t now) {
+        // a ONCE task is paused before the function runs, not after: the worker is then the first
+        // writer of _paused for this execution, so a resume() from another FreeRTOS task during the
+        // run (including from the function body) is not overwritten and the task runs again.
+        // Placing this before the state store also orders the two writes as observed from other cores.
+        if (_type == Type::ONCE)
+          _paused = true;
         _state = State::RUNNING;
 #ifndef MYCILA_TASK_MANAGER_NO_PARAMS
         _fn(_params);
@@ -252,8 +258,6 @@ namespace Mycila {
         // the task code is done, but the execution is not: everything below can still touch shared resources
         _state = State::FINALIZING;
         _lastEnd = millis();
-        if (_type == Type::ONCE)
-          _paused = true;
 #if !defined(MYCILA_TASK_MANAGER_NO_STATS) || !defined(MYCILA_TASK_MANAGER_NO_CALLBACKS)
         uint32_t elapsed = _lastEnd - now;
 #endif

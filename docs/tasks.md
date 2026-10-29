@@ -50,7 +50,7 @@ boot.resume();       // run on the next loop()
 // or: boot.resume(5000); // run 5 seconds from now
 ```
 
-This makes `ONCE` tasks a convenient deferred-call primitive: re-arm one at any time with `resume()`.
+This makes `ONCE` tasks a convenient deferred-call primitive: re-arm one at any time with `resume()`. This also holds **while the task is executing**: the task pauses itself when its run starts, not when it ends, so a `resume()` from another FreeRTOS task (or from the function body itself) during the run is preserved and the task executes once more afterwards.
 
 !!! note "`setType()` only pauses on an actual type change"
 `setType()` returns early when the type is unchanged, so it will **not** re-pause a task:
@@ -197,7 +197,7 @@ task.setEnabled(true);   // re-enable
 | Query          | Returns true when                                  |
 | :------------- | :------------------------------------------------- |
 | `enabled()`    | the enabled predicate is absent or returns `true`  |
-| `paused()`     | the task is paused (including a finished `ONCE`)   |
+| `paused()`     | the task is paused (including a finished `ONCE`, or an executing one) |
 | `scheduled()`  | `enabled() && !paused()`                           |
 | `shouldRun()`  | `scheduled()` and the interval has elapsed         |
 | `running()`    | the task **function** is currently executing       |

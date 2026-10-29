@@ -11,6 +11,8 @@
  *  - requestEarlyRun() ignores the interval once
  *  - forceRun() bypasses the interval AND the paused state
  *  - running() is false while onDone runs, active() is true
+ *  - a ONCE task re-arming itself from its function body is preserved (the
+ *    pause happens at run start, so resume() during the run is not lost)
  */
 #include <Arduino.h>
 #include <MycilaTaskManager.h>
@@ -83,6 +85,26 @@ void setup() {
   // 5. tryRun() on a paused task does nothing
   check(!task.tryRun(), "tryRun() skipped a paused task");
   check(fnRuns == 3, "no additional run");
+
+  // 6. a ONCE task re-arming itself from its function body: the pause now happens
+  //    at run start, so the resume() executed by the function is not overwritten
+  //    when the run finishes, and the task executes once more
+  uint32_t onceRuns = 0;
+  Mycila::Task once("once", Mycila::Task::Type::ONCE, [&](void*) {
+    onceRuns++;
+    if (onceRuns == 1) {
+      check(once.paused(), "the ONCE task is paused while its function runs (pause at run start)");
+      once.resume(); // from inside the function: must survive the self-pause
+    }
+  });
+  once.resume();
+  check(once.tryRun(), "first ONCE run started");
+  check(onceRuns == 1, "the ONCE function ran once");
+  check(!once.paused(), "the in-run resume() was preserved, not overwritten at run end");
+  check(once.tryRun(), "tryRun() ran the ONCE task a second time");
+  check(onceRuns == 2, "the ONCE task executed once more");
+  check(!once.tryRun(), "without a new resume() the ONCE task stays paused");
+  check(onceRuns == 2, "no further run without a new resume()");
 
   Serial.printf("== RESULT: %d passed, %d failed ==\n", g_pass, g_fail);
   Serial.println("== TaskStates example complete ==");
