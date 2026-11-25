@@ -70,7 +70,7 @@ default_envs = arduino-3
 src_dir = examples/TaskManager   ; or AsyncTaskManager, Json, Watchdog
 
 [env]
-platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.311/platform-espressif32.zip
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/61.04.00/platform-espressif32.zip
 framework = arduino
 board = esp32dev
 build_flags =

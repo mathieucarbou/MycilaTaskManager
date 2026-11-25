@@ -39,19 +39,36 @@ jobs:
       pio_default_envs: ${{ steps.envs.outputs.pio_default_envs }}
 
   platformio:
-    name: "pio:${{ matrix.board }}"
+    name: "pio:${{ matrix.env }}:${{ matrix.board }}"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        board:
-          [
-            "esp32dev",
-            "esp32-s2-saola-1",
-            "esp32-s3-devkitc-1",
-            "esp32-c3-devkitc-02",
-            # "esp32-c6-devkitc-1",
-          ]
+        include:
+          - env: ci-arduino-3
+            board: esp32dev
+          - env: ci-arduino-3
+            board: esp32-s2-saola-1
+          - env: ci-arduino-3
+            board: esp32-s3-devkitc-1
+          - env: ci-arduino-3
+            board: esp32-c3-devkitc-02
+          - env: ci-arduino-3
+            board: esp32-c6-devkitc-1
+          - env: ci-arduino-3
+            board: esp32-h2-devkitm-1
+          - env: ci-arduino-4
+            board: esp32dev
+          - env: ci-arduino-4
+            board: esp32-s2-saola-1
+          - env: ci-arduino-4
+            board: esp32-s3-devkitc-1
+          - env: ci-arduino-4
+            board: esp32-c3-devkitc-02
+          - env: ci-arduino-4
+            board: esp32-c6-devkitc-1
+          - env: ci-arduino-4
+            board: esp32-h2-devkitm-1
 
     steps:
       - name: Checkout
@@ -78,16 +95,16 @@ jobs:
           pip install --upgrade intelhex
 
       - name: Build AsyncTaskManager
-        run: PLATFORMIO_SRC_DIR=examples/AsyncTaskManager PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
-      - name: Build Json
-        run: PLATFORMIO_SRC_DIR=examples/Json PIO_BOARD=${{ matrix.board }} pio run -e ci-json
+        run: PLATFORMIO_SRC_DIR=examples/AsyncTaskManager PIO_BOARD=${{ matrix.board }} pio run -e ${{ matrix.env }}
       - name: Build TaskManager
-        run: PLATFORMIO_SRC_DIR=examples/TaskManager PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
+        run: PLATFORMIO_SRC_DIR=examples/TaskManager PIO_BOARD=${{ matrix.board }} pio run -e ${{ matrix.env }}
       - name: Build Watchdog
-        run: PLATFORMIO_SRC_DIR=examples/Watchdog PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
+        run: PLATFORMIO_SRC_DIR=examples/Watchdog PIO_BOARD=${{ matrix.board }} pio run -e ${{ matrix.env }}
       - name: Build PauseResume
-        run: PLATFORMIO_SRC_DIR=examples/PauseResume PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
+        run: PLATFORMIO_SRC_DIR=examples/PauseResume PIO_BOARD=${{ matrix.board }} pio run -e ${{ matrix.env }}
       - name: Build TaskStates
-        run: PLATFORMIO_SRC_DIR=examples/TaskStates PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
+        run: PLATFORMIO_SRC_DIR=examples/TaskStates PIO_BOARD=${{ matrix.board }} pio run -e ${{ matrix.env }}
       - name: Build ConditionalTasks
-        run: PLATFORMIO_SRC_DIR=examples/ConditionalTasks PIO_BOARD=${{ matrix.board }} pio run -e ci-arduino-3
+        run: PLATFORMIO_SRC_DIR=examples/ConditionalTasks PIO_BOARD=${{ matrix.board }} pio run -e ${{ matrix.env }}
+      - name: Build Json
+        run: PLATFORMIO_SRC_DIR=examples/Json PIO_BOARD=${{ matrix.board }} pio run -e ${{ matrix.env }}-json
